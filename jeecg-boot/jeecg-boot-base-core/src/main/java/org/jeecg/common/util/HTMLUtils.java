@@ -1,7 +1,9 @@
 package org.jeecg.common.util;
 
 import org.apache.commons.lang3.StringUtils;
-import org.pegdown.PegDownProcessor;
+import org.commonmark.node.Node;
+import org.commonmark.parser.Parser;
+import org.commonmark.renderer.html.HtmlRenderer;
 import org.springframework.web.util.HtmlUtils;
 
 /**
@@ -36,8 +38,12 @@ public class HTMLUtils {
      * @return
      */
     public static String parseMarkdown(String markdownContent) {
-        PegDownProcessor pdp = new PegDownProcessor();
-        return pdp.markdownToHtml(markdownContent);
+        /*PegDownProcessor pdp = new PegDownProcessor();
+        return pdp.markdownToHtml(markdownContent);*/
+        Parser parser = Parser.builder().build();
+        Node document = parser.parse(markdownContent);
+        HtmlRenderer renderer = HtmlRenderer.builder().build();
+        return renderer.render(document);
     }
 
 }

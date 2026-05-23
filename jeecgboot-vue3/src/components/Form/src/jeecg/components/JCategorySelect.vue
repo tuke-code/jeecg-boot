@@ -6,6 +6,7 @@
     style="width: 100%"
     :disabled="disabled"
     :dropdownStyle="{ maxHeight: '400px', overflow: 'auto' }"
+    showCheckedStrategy="SHOW_ALL"
     :placeholder="placeholder"
     :loadData="asyncLoadTreeData"
     :value="treeValue"
@@ -84,7 +85,8 @@
         () => {
           loadItemByCode();
         },
-        { deep: true }
+        // 代码逻辑说明: 【TV360X-480】封装表单和原生表单，默认值生成有问题的字段：分类字典树附默认值不生效---
+        { deep: true, immediate: true }
       );
       watch(
         () => props.pcode,
@@ -124,6 +126,7 @@
             treeValue.value = { value: null, label: null };
           }
         } else {
+          console.log("props.value:::",props.value)
           loadDictItem({ ids: props.value }).then((res) => {
             let values = props.value.split(',');
             treeValue.value = res.map((item, index) => ({
@@ -218,11 +221,10 @@
           backValue(value.value, value.label);
           treeValue.value = value;
         }
-        // update-begin--author:liaozhiyang---date:20240429---for：【QQYUN-9110】组件有值校验没消失
+        // 代码逻辑说明: 【QQYUN-9110】组件有值校验没消失
         nextTick(() => {
           formItemContext?.onFieldChange();
         });
-        // update-end--author:liaozhiyang---date:20240429---for：【QQYUN-9110】组件有值校验没消失
       }
 
       function getCurrTreeData() {

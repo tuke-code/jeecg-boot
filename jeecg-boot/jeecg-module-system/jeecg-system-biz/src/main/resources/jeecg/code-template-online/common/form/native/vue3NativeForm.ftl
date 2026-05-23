@@ -81,7 +81,7 @@
 						<#elseif po.classType=='cat_tree'>
 							<#assign need_category = true>
 								<j-category-select v-model:value="formData.${po.fieldName}" pcode="${po.dictField?default("")}" placeholder="请选择${po.filedComment}" <#if po.dictText?default("")?trim?length gt 1>back="${dashedToCamel(po.dictText)}"</#if> <#if po.readonly=='Y'>disabled</#if> @change="(value) => handleFormChange('${po.fieldName}', value)" allow-clear />
-					<#elseif po.fieldDbType=='int' || po.fieldDbType=='double' || po.fieldDbType=='BigDecimal'>
+					<#elseif po.fieldDbType=='int' || po.fieldDbType=='long' || po.fieldDbType=='double' || po.fieldDbType=='BigDecimal'>
 								<a-input-number v-model:value="formData.${po.fieldName}" placeholder="请输入${po.filedComment}" style="width: 100%" <#if po.readonly=='Y'>disabled</#if>/>
 					<#elseif po.classType=='file'>
 								<#assign need_upload = true>
@@ -91,7 +91,7 @@
 								<j-image-upload <#if po.uploadnum??>:fileMax=${po.uploadnum}<#else>:fileMax="0"</#if> v-model:value="formData.${po.fieldName}" <#if po.readonly=='Y'>disabled</#if>></j-image-upload>
 					<#elseif po.classType=='umeditor'>
 								<#assign need_editor = true>
-								<j-editor v-model:value="formData.${autoStringSuffixForModel(po)}" <#if po.readonly=='Y'>disabled</#if>/>
+								<j-editor v-model:value="formData.${autoStringSuffixForModel(po)}" <#if po.readonly=='Y'>disabled</#if> :autoFocus="false"/>
 						<#elseif po.fieldDbType=='Blob'>
 								<a-input v-model:value="formData.${autoStringSuffixForModel(po)}" placeholder="请输入${po.filedComment}" <#if po.readonly=='Y'>disabled</#if> allow-clear ></a-input>
 						<#elseif po.classType == 'sel_tree'>

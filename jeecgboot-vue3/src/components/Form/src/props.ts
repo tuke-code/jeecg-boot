@@ -68,7 +68,7 @@ export const basicProps = {
   // 【jeecg】超过3列自动折叠
   autoAdvancedCol: propTypes.number.def(3),
   // 超过3行自动折叠
-  autoAdvancedLine: propTypes.number.def(3),
+  // autoAdvancedLine: propTypes.number.def(3),
   // 不受折叠影响的行数
   alwaysShowLines: propTypes.number.def(1),
 

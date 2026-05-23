@@ -3,7 +3,7 @@
   <BasicTable @register="registerTable" :rowSelection="rowSelection">
     <!--插槽:table标题-->
     <template #tableTitle>
-      <a-button type="primary" preIcon="ant-design:plus-outlined" @click="addDepartRole">添加部门角色</a-button>
+      <a-button type="primary" preIcon="ant-design:plus-outlined" @click="addDepartRole" :disabled="!departId">添加部门角色</a-button>
       <template v-if="selectedRowKeys.length > 0">
         <a-divider type="vertical" />
         <a-dropdown>
@@ -88,6 +88,8 @@
           ...adaptiveColProps,
           style: { textAlign: 'left' },
         },
+        showResetButton: !!departId.value,
+        showSubmitButton: !!departId.value,
       },
       // 【issues/1064】列设置的 cacheKey
       tableSetting: { cacheKey: 'depart_user_departInfo' },
@@ -95,9 +97,8 @@
       beforeFetch(params) {
         params.deptId = departId.value;
       },
-      // update-begin--author:liaozhiyang---date:20240517---for：【TV360X-53】未选择部门的情况下，部门角色全查出来了
+      // 代码逻辑说明: 【TV360X-53】未选择部门的情况下，部门角色全查出来了
       immediate: !!departId.value,
-      // update-end--author:liaozhiyang---date:20240517---for：【TV360X-53】未选择部门的情况下，部门角色全查出来了
     },
   });
 
@@ -115,9 +116,7 @@
     () => reload()
   );
   onMounted(() => {
-    // update-begin--author:liaozhiyang---date:20240517---for：【TV360X-53】未选择部门的情况下，部门角色全查出来了
     // reload();
-    // update-end--author:liaozhiyang---date:20240517---for：【TV360X-53】未选择部门的情况下，部门角色全查出来了
   });
 
   // 清空选择的行

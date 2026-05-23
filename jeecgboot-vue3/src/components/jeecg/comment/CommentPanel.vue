@@ -2,10 +2,10 @@
   <div class="comment-tabs-warp" v-if="showStatus">
     <a-tabs v-if="show" @change="handleChange" :animated="false">
       <a-tab-pane v-if="showComment" tab="评论" key="comment" class="comment-list-tab">
-        <comment-list :tableName="tableName" :dataId="dataId" :datetime="datetime1" :otherHeight="otherHeight"></comment-list>
+        <comment-list :tableId="tableId" :tableName="tableName" :dataId="dataId" :datetime="datetime1" :otherHeight="otherHeight"></comment-list>
       </a-tab-pane>
       <a-tab-pane v-if="showFiles" tab="文件" key="file">
-        <comment-files :tableName="tableName" :dataId="dataId" :datetime="datetime2"></comment-files>
+        <comment-files :tableId="tableId" :tableName="tableName" :dataId="dataId" :datetime="datetime2"></comment-files>
       </a-tab-pane>
       <a-tab-pane v-if="showDataLog" tab="日志" key="log">
         <data-log-list :tableName="tableName" :dataId="dataId" :datetime="datetime3"></data-log-list>
@@ -33,6 +33,7 @@
       DataLogList,
     },
     props: {
+      tableId: propTypes.string.def(''),
       tableName: propTypes.string.def(''),
       dataId: propTypes.string.def(''),
       // 显示评论
@@ -73,13 +74,11 @@
         datetime1.value = temp;
         datetime2.value = temp;
         datetime3.value = temp;
-        // update-begin--author:liaozhiyang---date:20240527---for：【TV360X-486】再次打开重置组件内的状态
         // 再次打开重置组件内的状态
         show.value = false;
         nextTick(() => {
           show.value = true;
         });
-        // update-end--author:liaozhiyang---date:20240527---for：【TV360X-486】再次打开重置组件内的状态
       }
 
       return {

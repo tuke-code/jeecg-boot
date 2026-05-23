@@ -15,6 +15,7 @@
     @change="onChange"
     @search="onSearch"
     :tree-checkable="treeCheckAble"
+    :tagRender="tagRender"
   >
     <template #[name]="data" v-for="name in slotNamesGroup" :key="name">
       <slot :name="name" v-bind="data"></slot>
@@ -32,8 +33,8 @@
   import { useAttrs } from '/@/hooks/core/useAttrs';
   import { TreeSelect } from 'ant-design-vue';
   import { useMessage } from '/@/hooks/web/useMessage';
-  import { isObject } from '/@/utils/is';
-
+  import { isObject, isArray } from '/@/utils/is';
+  import { useI18n } from '/@/hooks/web/useI18n';
   enum Api {
     url = '/sys/dict/loadTreeData',
     view = '/sys/dict/loadDictItem/',
@@ -45,26 +46,25 @@
     dict: propTypes.string.def('id'),
     parentCode: propTypes.string.def(''),
     pidField: propTypes.string.def('pid'),
-    //update-begin---author:wangshuai ---date:20220620  for：JTreeSelect组件pidValue还原成空，否则会影响自定义组件树示例------------
+    // 代码逻辑说明: JTreeSelect组件pidValue还原成空，否则会影响自定义组件树示例------------
     pidValue: propTypes.string.def(''),
-    //update-end---author:wangshuai ---date:20220620  for：JTreeSelect组件pidValue还原成空，否则会影响自定义组件树示例--------------
     hasChildField: propTypes.string.def(''),
     converIsLeafVal: propTypes.integer.def(1),
     condition: propTypes.string.def(''),
     multiple: propTypes.bool.def(false),
     loadTriggleChange: propTypes.bool.def(false),
     reload: propTypes.number.def(1),
-    //update-begin-author:taoyan date:2022-11-8 for: issues/4173 Online JTreeSelect控件changeOptions方法未生效
+    // 代码逻辑说明: issues/4173 Online JTreeSelect控件changeOptions方法未生效
     url: propTypes.string.def(''),
     params: propTypes.object.def({}),
-    //update-end-author:taoyan date:2022-11-8 for: issues/4173 Online JTreeSelect控件changeOptions方法未生效
-    //update-begin---author:wangshuai date: 20230202 for: 新增是否有复选框
     //默认没有选择框
     treeCheckAble: propTypes.bool.def(false),
-    //update-end---author:wangshuai date: 20230202 for: 新增是否有复选框
     hiddenNodeKey: propTypes.string.def(''),
+    //多选时渲染tag文本
+    tagRender: propTypes.func,
   });
   const attrs = useAttrs();
+  const { t } = useI18n();
   const emit = defineEmits(['change', 'update:value']);
   const slots = defineSlots();
   const { createMessage } = useMessage();
@@ -87,7 +87,7 @@
   /**
    * 监听dict变化
    */
-  // update-begin--author:liaozhiyang---date:20240612---for：【issues/1283】JtreeSelect组件初始调用了两次接口
+  // 代码逻辑说明: 【issues/1283】JtreeSelect组件初始调用了两次接口
   watch(
     () => props.dict,
     () => {
@@ -95,8 +95,7 @@
       loadRoot();
     }
   );
-  // update-end--author:liaozhiyang---date:20240612---for：【issues/1283】JtreeSelect组件初始调用了两次接口
-  // update-begin--author:liaozhiyang---date:20240529---for：【TV360X-87】树表编辑时不可选自己及子孙节点当父节点
+  // 代码逻辑说明: 【TV360X-87】树表编辑时不可选自己及子孙节点当父节点
   watch(
     () => props.hiddenNodeKey,
     () => {
@@ -106,26 +105,23 @@
       }
     }
   );
-  // update-end--author:liaozhiyang---date:20240529---for：【TV360X-87】树表编辑时不可选自己及子孙节点当父节点
 
-  //update-begin-author:taoyan date:2022-5-25 for: VUEN-1056 15、严重——online树表单，添加的时候，父亲节点是空的
+  // 代码逻辑说明: VUEN-1056 15、严重——online树表单，添加的时候，父亲节点是空的
   watch(
     () => props.reload,
     async () => {
       treeData.value = [];
-      // update-begin--author:liaozhiyang---date:20240524---for：【TV360X-88】online树表重复新增时父节点数据加载不全且已开的子节点不重新加载
+      // 代码逻辑说明: 【TV360X-88】online树表重复新增时父节点数据加载不全且已开的子节点不重新加载
       show.value = false;
       nextTick(() => {
         show.value = true;
       });
-      // update-end--author:liaozhiyang---date:20240524---for：【TV360X-88】online树表重复新增时父节点数据加载不全且已开的子节点不重新加载
       await loadRoot();
     },
     {
       immediate: false,
     }
   );
-  //update-end-author:taoyan date:2022-5-25 for: VUEN-1056 15、严重——online树表单，添加的时候，父亲节点是空的
 
   /**
    * 根据code获取下拉数据并回显
@@ -138,29 +134,42 @@
         treeValue.value = { label: null, value: null };
       }
     } else {
-      //update-begin-author:taoyan date:2022-11-8 for: issues/4173 Online JTreeSelect控件changeOptions方法未生效
+      // 代码逻辑说明: issues/4173 Online JTreeSelect控件changeOptions方法未生效
       if(props.url){
         getItemFromTreeData();
       }else{
+        // 代码逻辑说明: 【issues/8093】选择节点后会先变成编码再显示label文字
+        if (props.value) {
+          if (isArray(treeValue.value)) {
+            let isNotRequestTransform = false;
+            const value = isArray(props.value) ? props.value : props.value.split(',');
+            isNotRequestTransform = value.every((value) => !!treeValue.value.find((item) => item.value === value));
+            if (isNotRequestTransform) {
+              return;
+            }
+          } else if (isObject(treeValue.value) && unref(treeValue).label != null) {
+            if (props.value == unref(treeValue).value) {
+              // 不需要再去请求翻译
+              return;
+            }
+          }
+        }
         let params = { key: props.value };
         let result = await defHttp.get({ url: `${Api.view}${props.dict}`, params }, { isTransformResponse: false });
         if (result.success) {
-          //update-start-author:liaozhiyang date:2023-7-17 for:【issues/5141】使用JtreeSelect 组件 控制台报错
           if(props.multiple){
             let values = props.value.split(',');
             treeValue.value = result.result.map((item, index) => ({
               key: values[index],
               value: values[index],
-              label: item,
+              label: translateTitle(item),
             }));
           }else{
-            treeValue.value = { key: props.value, value: props.value, label: result.result[0] };
+            treeValue.value = { key: props.value, value: props.value, label: translateTitle(result.result[0]) };
           }
-          //update-end-author:liaozhiyang date:2023-7-17 for:【issues/5141】使用JtreeSelect 组件 控制台报错
           onLoadTriggleChange(result.result[0]);
         }
       }
-      //update-end-author:taoyan date:2022-11-8 for: issues/4173 Online JTreeSelect控件changeOptions方法未生效
     }
   }
 
@@ -198,12 +207,12 @@
     let res = await defHttp.get({ url: Api.url, params }, { isTransformResponse: false });
     if (res.success && res.result) {
       for (let i of res.result) {
+        i.title = translateTitle(i.title);
         i.value = i.key;
         i.isLeaf = !!i.leaf;
       }
-      // update-begin--author:liaozhiyang---date:20240523---for：【TV360X-87】树表编辑时不可选自己及子孙节点当父节点
+      // 代码逻辑说明: 【TV360X-87】树表编辑时不可选自己及子孙节点当父节点
       handleHiddenNode(res.result);
-      // update-end--author:liaozhiyang---date:20240523---for：【TV360X-87】树表编辑时不可选自己及子孙节点当父节点
       treeData.value = [...res.result];
     } else {
       console.log('数根节点查询结果异常', res);
@@ -211,13 +220,23 @@
   }
 
   /**
+   * 翻译
+   * @param text
+   */
+  function translateTitle(text) {
+    if (text.includes("t('") && t) {
+      return new Function('t', `return ${text}`)(t);
+    }
+    return text;
+  }
+  /**
    * 异步加载数据
    */
   async function asyncLoadTreeData(treeNode) {
     if (treeNode.dataRef.children) {
       return Promise.resolve();
     }
-    if(props.url){
+    if (props.url) {
       return Promise.resolve();
     }
     let pid = treeNode.dataRef.key;
@@ -234,12 +253,12 @@
     let res = await defHttp.get({ url: Api.url, params }, { isTransformResponse: false });
     if (res.success) {
       for (let i of res.result) {
+        i.title = translateTitle(i.title);
         i.value = i.key;
         i.isLeaf = !!i.leaf;
       }
-      // update-begin--author:liaozhiyang---date:20240523---for：【TV360X-87】树表编辑时不可选自己及子孙节点当父节点
+      // 代码逻辑说明: 【TV360X-87】树表编辑时不可选自己及子孙节点当父节点
       handleHiddenNode(res.result);
-      // update-end--author:liaozhiyang---date:20240523---for：【TV360X-87】树表编辑时不可选自己及子孙节点当父节点
       //添加子节点
       addChildren(pid, res.result, treeData.value);
       treeData.value = [...treeData.value];
@@ -278,7 +297,21 @@
     } else {
       emitValue(value.value);
     }
-    treeValue.value = value;
+    // 代码逻辑说明: 【issues/8093】删除后会先变成编码再显示label文字
+    if (isArray(value)) {
+      // 编辑删除时有选中的值是异步（第二级以上的）会不显示label
+      value.forEach((item) => {
+        if (item.label === undefined && item.value != null) {
+          const findItem = treeValue.value.find((o) => o.value === item.value);
+          if (findItem) {
+            item.label = findItem.label;
+          }
+        }
+      });
+      treeValue.value = value;
+    } else {
+      treeValue.value = value;
+    }
   }
 
   function emitValue(value) {
@@ -318,7 +351,7 @@
     });
   }
 
-  //update-begin-author:taoyan date:2022-11-8 for: issues/4173 Online JTreeSelect控件changeOptions方法未生效
+  // 代码逻辑说明: issues/4173 Online JTreeSelect控件changeOptions方法未生效
   watch(()=>props.url, async (val)=>{
     if(val){
       await loadRootByUrl();
@@ -334,12 +367,12 @@
     let res = await defHttp.get({ url, params }, { isTransformResponse: false });
     if (res.success && res.result) {
       for (let i of res.result) {
+        i.title = translateTitle(i.title);
         i.key = i.value;
         i.isLeaf = !!i.leaf;
       }
-      // update-begin--author:liaozhiyang---date:20240523---for：【TV360X-87】树表编辑时不可选自己及子孙节点当父节点
+      // 代码逻辑说明: 【TV360X-87】树表编辑时不可选自己及子孙节点当父节点
       handleHiddenNode(res.result);
-      // update-end--author:liaozhiyang---date:20240523---for：【TV360X-87】树表编辑时不可选自己及子孙节点当父节点
       treeData.value = [...res.result];
     } else {
       console.log('数根节点查询结果异常', res);
@@ -380,7 +413,6 @@
       }
     }
   }
-  //update-end-author:taoyan date:2022-11-8 for: issues/4173 Online JTreeSelect控件changeOptions方法未生效
 
   /**
    * 2024-05-23

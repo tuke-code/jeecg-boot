@@ -17,7 +17,7 @@
                   <span>{{ item.toUserId_dictText }}</span>
                   <Tooltip class="comment-last-content" @openChange="(v)=>visibleChange(v, item)">
                     <template #title>
-                      <div v-html="getHtml(item.commentId_dictText)"></div>
+                      <div v-html="getHtml(lineFeed(item.commentId_dictText))"></div>
                     </template>
                     <message-outlined />
                   </Tooltip>
@@ -42,7 +42,7 @@
             </template>
 
             <template #content>
-              <div class="content" v-html="getHtml(item.commentContent)" style="font-size: 15px">
+              <div class="content" v-html="getHtml(lineFeed(item.commentContent))" style="font-size: 15px">
               </div>
 
               <div v-if="item.fileList && item.fileList.length > 0">
@@ -105,6 +105,7 @@
       HistoryFileList,
     },
     props: {
+      tableId: propTypes.string.def(''),
       tableName: propTypes.string.def(''),
       dataId: propTypes.string.def(''),
       datetime:  propTypes.number.def(1),
@@ -128,7 +129,7 @@
       }
       
       function getMyAvatar(){
-        return userInfo.avatar;
+        return getFileAccessHttpUrl(userInfo.avatar);
       }
       
       // 获取头像
@@ -188,12 +189,10 @@
           let array = data.records;
           console.log(123, array);
           dataList.value = array;
-          // update-begin--author:liaozhiyang---date:20240521---for：【TV360X-18】评论之后滚动条自动触底
           // Number.MAX_SAFE_INTEGER 火狐不兼容改成 10e4
           nextTick(() => {
             listRef.value && listRef.value.$el && (listRef.value.$el.scrollTop = 10e5);
           });
-          // update-end--author:liaozhiyang---date:20240521---for：【TV360X-18】评论之后滚动条自动触底
         }
       }
 
@@ -281,6 +280,10 @@
           }
         }
       }
+      // 代码逻辑说明: 【TV360X-932】评论加上换行
+      const lineFeed = (content) => {
+        return content.replace(/\n/g, '<br>');
+      };
 
       return {
         dataList,
@@ -303,6 +306,7 @@
         bottomCommentRef,
         visibleChange,
         listRef,
+        lineFeed,
       };
     },
   });
@@ -318,6 +322,9 @@
     }
     .ant-comment {
       width: 100%;
+    }
+    :deep(.ant-comment-avatar) {
+      cursor: default;
     }
   }
   .comment-author {
@@ -339,7 +346,7 @@
   .tx{
     margin-top: 4px;
   }
-  // update-begin--author:liaozhiyang---date:20240327---for：【QQYUN-8639】暗黑主题适配
+  // 代码逻辑说明: 【QQYUN-8639】暗黑主题适配
   .comment-area {
     position: absolute;
     bottom: 0;
@@ -357,5 +364,4 @@
       color:rgba(255, 255, 255, 0.85);
     }
   }
-  // update-end--author:liaozhiyang---date:20240327---for：【QQYUN-8639】暗黑主题适配
 </style>

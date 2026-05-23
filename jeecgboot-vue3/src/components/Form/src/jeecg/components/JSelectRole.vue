@@ -2,11 +2,9 @@
 <template>
   <div class="JSelectRole">
     <JSelectBiz @handleOpen="handleOpen" :loading="loadingEcho" v-bind="attrs"></JSelectBiz>
-    <!-- update-begin--author:liaozhiyang---date:20240515---for：【QQYUN-9260】必填模式下会影响到弹窗内antd组件的样式 -->
     <a-form-item>
       <RoleSelectModal @register="regModal" @getSelectResult="setValue" v-bind="getBindValue"></RoleSelectModal>
     </a-form-item>
-    <!-- update-end--author:liaozhiyang---date:20240515---for：【QQYUN-9260】必填模式下会影响到弹窗内antd组件的样式 -->
   </div>
 </template>
 <script lang="ts">
@@ -41,7 +39,7 @@
         default: () => {},
       },
     },
-    emits: ['options-change', 'change'],
+    emits: ['options-change', 'change', 'update:value'],
     setup(props, { emit, refs }) {
       const emitData = ref<any[]>();
       //注册model
@@ -118,6 +116,8 @@
         //emitData.value = values.join(",");
         state.value = values;
         selectValues.value = values;
+        // 代码逻辑说明: 【issues/7948】修复JselectRole组件不支持双向绑定
+        emit('update:value', values);
       }
       const getBindValue = Object.assign({}, unref(props), unref(attrs));
       return {
@@ -136,13 +136,12 @@
   });
 </script>
 <style lang="less" scoped>
-  // update-begin--author:liaozhiyang---date:20240515---for：【QQYUN-9260】必填模式下会影响到弹窗内antd组件的样式
+  // 代码逻辑说明: 【QQYUN-9260】必填模式下会影响到弹窗内antd组件的样式
   .JSelectRole {
     > .ant-form-item {
       display: none;
     }
   }
-  // update-end--author:liaozhiyang---date:20240515---for：【QQYUN-9260】必填模式下会影响到弹窗内antd组件的样式
   .j-select-row {
     @width: 82px;
 

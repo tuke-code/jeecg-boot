@@ -39,8 +39,9 @@
 
       function emitArray() {
         let arr = [];
-        let begin = beginValue.value || '';
-        let end = endValue.value || '';
+        // 代码逻辑说明: 【TV360X-1749】数量0输入不了，输入清空了
+        let begin = beginValue.value ?? '';
+        let end = endValue.value ?? '';
         arr.push(begin);
         arr.push(end);
         emit('change', arr);
@@ -73,7 +74,7 @@
 </script>
 
 <style lang="less" scoped>
-  // update-begin--author:liaozhiyang---date:20240607---for：【TV360X-214】范围查询控件没有根据配置格式化
+  // 代码逻辑说明: 【TV360X-214】范围查询控件没有根据配置格式化
   .ant-input-group {
     display: flex;
     .ant-input-number {
@@ -87,5 +88,4 @@
       }
     }
   }
-  // update-end--author:liaozhiyang---date:20240607---for：【TV360X-214】范围查询控件没有根据配置格式化
 </style>

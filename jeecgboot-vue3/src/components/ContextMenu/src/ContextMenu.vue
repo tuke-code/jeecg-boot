@@ -138,7 +138,8 @@
   .item-style() {
     li {
       display: inline-block;
-      width: 100%;
+      // 代码逻辑说明: 【TV360X-1576】右键样式选中缺少了一块---
+      width: 100% !important;
       height: @default-height;
       margin: 0 !important;
       line-height: @default-height;

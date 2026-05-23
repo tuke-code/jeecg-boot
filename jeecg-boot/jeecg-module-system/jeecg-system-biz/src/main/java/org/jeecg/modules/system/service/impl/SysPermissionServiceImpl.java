@@ -3,6 +3,7 @@ package org.jeecg.modules.system.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import org.jeecg.common.config.TenantContext;
 import org.jeecg.common.constant.CacheConstant;
 import org.jeecg.common.constant.CommonConstant;
 import org.jeecg.common.exception.JeecgBootException;
@@ -25,7 +26,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.util.*;
 
 /**
@@ -235,21 +236,32 @@ public class SysPermissionServiceImpl extends ServiceImpl<SysPermissionMapper, S
 
 	@Override
 	public List<SysPermission> queryByUser(String userId) {
-		List<SysPermission> permissionList = this.sysPermissionMapper.queryByUser(userId);
+		//update-begin---author:scott ---date:2026-04-16  for：【pull/9445】开启多租户模式时，获取用户权限时加入tenant_id判断-----------
+		List<SysPermission> permissionList;
+		if (MybatisPlusSaasConfig.OPEN_SYSTEM_TENANT_CONTROL) {
+			int tenantId = oConvertUtils.getInt(TenantContext.getTenant(), -1);
+			if (tenantId != -1) {
+				permissionList = this.sysPermissionMapper.queryByUserWithTenantId(userId, tenantId);
+			} else {
+				permissionList = this.sysPermissionMapper.queryByUser(userId);
+			}
+		} else {
+			permissionList = this.sysPermissionMapper.queryByUser(userId);
+		}
+		//update-end---author:scott ---date:2026-04-16  for：【pull/9445】开启多租户模式时，获取用户权限时加入tenant_id判断-----------
 		//================= begin 开启租户的时候 如果没有test角色，默认加入test角色================
 		if (MybatisPlusSaasConfig.OPEN_SYSTEM_TENANT_CONTROL) {
 			if (permissionList == null) {
 				permissionList = new ArrayList<>();
 			}
 			List<SysPermission> testRoleList = sysPermissionMapper.queryPermissionByTestRoleId();
-			//update-begin-author:liusq date:20230427 for: [QQYUN-5168]【vue3】为什么出现两个菜单 菜单根据id去重
+			// 代码逻辑说明: [QQYUN-5168]【vue3】为什么出现两个菜单 菜单根据id去重
 			for (SysPermission permission: testRoleList) {
 				boolean hasPerm = permissionList.stream().anyMatch(a->a.getId().equals(permission.getId()));
 				if(!hasPerm){
 					permissionList.add(permission);
 				}
 			}
-			//update-end-author:liusq date:20230427 for: [QQYUN-5168]【vue3】为什么出现两个菜单 菜单根据id去重
 		}
 		//================= end 开启租户的时候 如果没有test角色，默认加入test角色================
 		return permissionList;

@@ -19,13 +19,16 @@
 			<bind name="bindRealname" value="'%'+realname+'%'"/>
 			and a.realname like #{bindRealname}
 		</if>
+		ORDER BY
+		a.sort,a.create_time desc
 	</select>
 
 	<!-- 根据部门查询部门用户 分页 -->
 	<select id="queryDepartUserPageList" resultType="org.jeecg.modules.system.entity.SysUser">
-		select a.*, c.depart_name as org_code_txt from sys_user a
-		join sys_user_depart b on b.user_id = a.id
-		join sys_depart c on b.dep_id = c.id
+		<!-- update by wangshuai 2024-07-03【issues/6342】部门人员选择组件出现人员重复-->
+		select DISTINCT a.* from sys_user a
+		left join sys_user_depart b on b.user_id = a.id
+		left join sys_depart c on b.dep_id = c.id
 		<bind name="bindOrgCode" value="orgCode+'%'"/>
 		where a.del_flag = 0 and a.status = 1 and c.org_code like #{bindOrgCode} and a.username!='_reserve_user_external'
 		<if test="username!=null and username!=''">
@@ -36,6 +39,8 @@
 		    <bind name="bindRealname" value="'%'+realname+'%'"/>
 			and a.realname like #{bindRealname}
 		</if>
+		ORDER BY
+		a.sort,a.create_time desc
 	</select>
 
     <!--获取用户信息（聊天专用）-->
@@ -81,6 +86,7 @@
 				#{userId}
 			</foreach>
 		</if>
+		order by a.sort, a.create_time desc
 	</select>
 	
 	<!--获取租户下的部门-通过前台传过来的部门id-->
@@ -124,4 +130,16 @@
 			select id from sys_depart where tenant_id = #{tenantId}
 		)
 	</delete>
+    
+    <!-- 通过用户id集合获取用户id和部门code -->
+    <select id="getUserDepPostByUserIds" resultType="org.jeecg.modules.system.model.SysUserSysDepPostModel">
+        select su.id,sd.org_code from sys_user_depart sud
+        JOIN sys_user su ON sud.user_id = su.id
+        JOIN sys_depart sd ON sud.dep_id = sd.id
+        where
+        sud.user_id in
+        <foreach collection="userIdList" item="userId" open="(" close=")" separator=",">
+            #{userId}
+        </foreach>
+    </select>
 </mapper>

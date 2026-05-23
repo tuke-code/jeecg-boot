@@ -2,11 +2,13 @@ package org.jeecg.modules.system.controller;
 
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang.StringUtils;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.apache.shiro.subject.Subject;
@@ -19,18 +21,17 @@ import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.common.system.vo.DictModel;
 import org.jeecg.common.system.vo.DictQuery;
 import org.jeecg.common.system.vo.LoginUser;
-import org.jeecg.common.util.ImportExcelUtil;
-import org.jeecg.common.util.RedisUtil;
-import org.jeecg.common.util.TokenUtils;
-import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.common.util.*;
 import org.jeecg.config.mybatis.MybatisPlusSaasConfig;
 import org.jeecg.config.shiro.ShiroRealm;
+import org.jeecg.modules.system.constant.DefIndexConst;
 import org.jeecg.modules.system.entity.SysDict;
 import org.jeecg.modules.system.entity.SysDictItem;
 import org.jeecg.modules.system.model.SysDictTree;
 import org.jeecg.modules.system.model.TreeSelectModel;
 import org.jeecg.modules.system.service.ISysDictItemService;
 import org.jeecg.modules.system.service.ISysDictService;
+import org.jeecg.modules.system.vo.SysDictBatchVo;
 import org.jeecg.modules.system.vo.SysDictPage;
 import org.jeecg.modules.system.vo.lowapp.SysDictVo;
 import org.jeecgframework.poi.excel.ExcelImportCheckUtil;
@@ -38,6 +39,7 @@ import org.jeecgframework.poi.excel.ExcelImportUtil;
 import org.jeecgframework.poi.excel.def.NormalExcelConstants;
 import org.jeecgframework.poi.excel.entity.ExportParams;
 import org.jeecgframework.poi.excel.entity.ImportParams;
+import org.jeecgframework.poi.excel.entity.enmus.ExcelType;
 import org.jeecgframework.poi.excel.view.JeecgEntityExcelView;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,8 +49,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.multipart.MultipartHttpServletRequest;
 import org.springframework.web.servlet.ModelAndView;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.*;
@@ -78,8 +80,14 @@ public class SysDictController {
 	private ShiroRealm shiroRealm;
 
 	@RequestMapping(value = "/list", method = RequestMethod.GET)
-	public Result<IPage<SysDict>> queryPageList(SysDict sysDict,@RequestParam(name="pageNo", defaultValue="1") Integer pageNo,
-									  @RequestParam(name="pageSize", defaultValue="10") Integer pageSize,HttpServletRequest req) {
+	public Result<IPage<SysDict>> queryPageList(
+			SysDict sysDict,
+			@RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
+			@RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
+			// 查询关键字，模糊筛选code和name
+			@RequestParam(name = "keywords", required = false) String keywords,
+			HttpServletRequest req
+	) {
 		Result<IPage<SysDict>> result = new Result<IPage<SysDict>>();
 		//------------------------------------------------------------------------------------------------
 		//是否开启系统管理模块的多租户数据隔离【SAAS多租户模式】
@@ -88,7 +96,12 @@ public class SysDictController {
 		}
 		//------------------------------------------------------------------------------------------------
 		QueryWrapper<SysDict> queryWrapper = QueryGenerator.initQueryWrapper(sysDict, req.getParameterMap());
-		Page<SysDict> page = new Page<SysDict>(pageNo, pageSize);
+		// 查询关键字，模糊筛选code和name
+		if (oConvertUtils.isNotEmpty(keywords)) {
+			queryWrapper.and(i -> i.like("dict_code", keywords).or().like("dict_name", keywords));
+		}
+
+		Page<SysDict> page = new Page<>(pageNo, pageSize);
 		IPage<SysDict> pageList = sysDictService.page(page, queryWrapper);
 		log.debug("查询当前页："+pageList.getCurrent());
 		log.debug("查询当前页数量："+pageList.getSize());
@@ -172,7 +185,7 @@ public class SysDictController {
 	 */
 	@RequestMapping(value = "/getDictItems/{dictCode}", method = RequestMethod.GET)
 	public Result<List<DictModel>> getDictItems(@PathVariable("dictCode") String dictCode, @RequestParam(value = "sign",required = false) String sign,HttpServletRequest request) {
-		log.info(" dictCode : "+ dictCode);
+		log.debug(" dictCode : "+ dictCode);
 		Result<List<DictModel>> result = new Result<List<DictModel>>();
 		try {
 			List<DictModel> ls = sysDictService.getDictItems(dictCode);
@@ -202,9 +215,10 @@ public class SysDictController {
 	public Result<List<DictModel>> loadDict(@PathVariable("dictCode") String dictCode,
 			@RequestParam(name="keyword",required = false) String keyword,
 			@RequestParam(value = "sign",required = false) String sign,
-			@RequestParam(value = "pageSize", required = false) Integer pageSize) {
+			@RequestParam(name = "pageNo", defaultValue = "1", required = false) Integer pageNo,
+			@RequestParam(name = "pageSize", defaultValue = "10", required = false) Integer pageSize) {
 		
-		//update-begin-author:taoyan date:2023-5-22 for: /issues/4905 因为中括号(%5)的问题导致的 表单生成器字段配置时，选择关联字段，在进行高级配置时，无法加载数据库列表，提示 Sgin签名校验错误！ #4905 RouteToRequestUrlFilter
+		// 代码逻辑说明: /issues/4905 因为中括号(%5)的问题导致的 表单生成器字段配置时，选择关联字段，在进行高级配置时，无法加载数据库列表，提示 Sgin签名校验错误！ #4905 RouteToRequestUrlFilter
 		if(keyword!=null && keyword.indexOf("%5")>=0){
 			try {
 				keyword = URLDecoder.decode(keyword, "UTF-8");
@@ -212,12 +226,11 @@ public class SysDictController {
 				log.error("下拉搜索关键字解码失败", e);
 			}
 		}
-		//update-end-author:taoyan date:2023-5-22 for: /issues/4905 因为中括号(%5)的问题导致的  表单生成器字段配置时，选择关联字段，在进行高级配置时，无法加载数据库列表，提示 Sgin签名校验错误！ #4905
 		
 		log.info(" 加载字典表数据,加载关键字: "+ keyword);
 		Result<List<DictModel>> result = new Result<List<DictModel>>();
 		try {
-			List<DictModel> ls = sysDictService.loadDict(dictCode, keyword, pageSize);
+			List<DictModel> ls = sysDictService.loadDict(dictCode, keyword, pageNo,pageSize);
 			if (ls == null) {
 				result.error500("字典Code格式不正确！");
 				return result;
@@ -249,12 +262,12 @@ public class SysDictController {
 			@RequestParam(value = "sign", required = false) String sign,
 			@RequestParam(value = "pageSize", required = false) Integer pageSize) {
 		// 首次查询查出来用户选中的值，并且不分页
-		Result<List<DictModel>> firstRes = this.loadDict(dictCode, keyword, sign, null);
+		Result<List<DictModel>> firstRes = this.loadDict(dictCode, keyword, sign,null, null);
 		if (!firstRes.isSuccess()) {
 			return firstRes;
 		}
 		// 然后再查询出第一页的数据
-		Result<List<DictModel>> result = this.loadDict(dictCode, "", sign, pageSize);
+		Result<List<DictModel>> result = this.loadDict(dictCode, "", sign,1, pageSize);
 		if (!result.isSuccess()) {
 			return result;
 		}
@@ -395,6 +408,94 @@ public class SysDictController {
 	}
 
 	/**
+	 * @功能：字典和字典项一起新增（支持批量）
+	 * @param sysDictBatchVo 字典批量数据
+	 * @return
+	 */
+    @RequiresPermissions("system:dict:add")
+	@RequestMapping(value = "/batchAddDictWithItems", method = RequestMethod.POST)
+	public Result<Map<String, Object>> batchAddDictWithItems(@RequestBody SysDictBatchVo sysDictBatchVo) {
+		Result<Map<String, Object>> result = new Result<Map<String, Object>>();
+		//update-begin---author:zzl ---date:2026-04-03  for：字典和字典项一起新增（支持批量）---
+		log.info("========== 批量新增字典开始 ==========");
+		log.info("请求参数: {}", JSON.toJSONString(sysDictBatchVo));
+		if (sysDictBatchVo == null || sysDictBatchVo.getDictList() == null || sysDictBatchVo.getDictList().isEmpty()) {
+			log.warn("字典列表为空，参数校验不通过");
+			result.error500("字典列表不能为空！");
+			return result;
+		}
+		int successCount = 0;
+		int failCount = 0;
+		StringBuilder message = new StringBuilder();
+		List<Map<String, String>> failList = new ArrayList<>();
+		log.info("待处理的字典数量: {}", sysDictBatchVo.getDictList().size());
+		for (int i = 0; i < sysDictBatchVo.getDictList().size(); i++) {
+			SysDictPage sysDictPage = sysDictBatchVo.getDictList().get(i);
+			log.info("开始处理第 {} 个字典, dictCode: {}, dictName: {}", i + 1, sysDictPage.getDictCode(), sysDictPage.getDictName());
+			try {
+				SysDict sysDict = new SysDict();
+				sysDict.setDictName(sysDictPage.getDictName());
+				sysDict.setDictCode(sysDictPage.getDictCode());
+				sysDict.setDescription(sysDictPage.getDescription());
+				sysDict.setDelFlag(CommonConstant.DEL_FLAG_0);
+				Integer num = sysDictService.saveMain(sysDict, sysDictPage.getSysDictItemList());
+				if (num > 0) {
+					successCount++;
+					log.info("第 {} 个字典[{}]保存成功", i + 1, sysDictPage.getDictCode());
+				} else if (num == -1) {
+					failCount++;
+					Map<String, String> failItem = new HashMap<>();
+					failItem.put("dictCode", sysDictPage.getDictCode());
+					failItem.put("dictName", sysDictPage.getDictName());
+					failItem.put("errorMsg", "字典项值为空，已忽略！");
+					failList.add(failItem);
+					message.append("第").append(i + 1).append("个字典[").append(sysDictPage.getDictCode()).append("]：字典项值为空，已忽略！\n");
+					log.warn("第 {} 个字典[{}]字典项值为空，已忽略", i + 1, sysDictPage.getDictCode());
+				} else {
+					failCount++;
+					Map<String, String> failItem = new HashMap<>();
+					failItem.put("dictCode", sysDictPage.getDictCode());
+					failItem.put("dictName", sysDictPage.getDictName());
+					failItem.put("errorMsg", "字典编码已经存在！");
+					failList.add(failItem);
+					message.append("第").append(i + 1).append("个字典[").append(sysDictPage.getDictCode()).append("]：字典编码已经存在！\n");
+					log.warn("第 {} 个字典[{}]字典编码已经存在", i + 1, sysDictPage.getDictCode());
+				}
+			} catch (Exception e) {
+				failCount++;
+				Map<String, String> failItem = new HashMap<>();
+				failItem.put("dictCode", sysDictPage.getDictCode());
+				failItem.put("dictName", sysDictPage.getDictName());
+				failItem.put("errorMsg", e.getMessage());
+				failList.add(failItem);
+				message.append("第").append(i + 1).append("个字典[").append(sysDictPage.getDictCode()).append("]：").append(e.getMessage()).append("\n");
+				log.error("第 {} 个字典[{}]处理异常: {}", i + 1, sysDictPage.getDictCode(), e.getMessage(), e);
+			}
+		}
+		Map<String, Object> returnMap = new HashMap<>();
+		returnMap.put("successCount", successCount);
+		returnMap.put("failCount", failCount);
+		returnMap.put("message", message.toString());
+		returnMap.put("failList", failList);
+		if (failCount == 0) {
+			result.success("批量保存成功！共保存 " + successCount + " 个字典！");
+			log.info("批量保存成功，共保存 {} 个字典", successCount);
+		} else if (successCount > 0) {
+			result.success("部分保存成功！成功 " + successCount + " 个，失败 " + failCount + " 个！");
+			log.warn("部分保存成功，成功 {} 个，失败 {} 个", successCount, failCount);
+		} else {
+			result.error500("全部保存失败！");
+			log.error("全部保存失败！共 {} 个字典", sysDictBatchVo.getDictList().size());
+		}
+
+
+		result.setResult(returnMap);
+		log.info("========== 批量新增字典结束 ==========");
+		//update-end---author:zzl ---date:2026-04-03  for：字典和字典项一起新增（支持批量）---
+		return result;
+	}
+
+	/**
 	 * @功能：编辑
 	 * @param sysDict
 	 * @return
@@ -479,7 +580,7 @@ public class SysDictController {
 //		redisTemplate.delete(keys6);
 //		redisTemplate.delete(keys7);
 
-		//update-begin-author:liusq date:20230404 for:  [issue/4358]springCache中的清除缓存的操作使用了“keys”
+		// 代码逻辑说明: [issue/4358]springCache中的清除缓存的操作使用了“keys”
 		redisUtil.removeAll(CacheConstant.SYS_DICT_CACHE);
 		redisUtil.removeAll(CacheConstant.SYS_ENABLE_DICT_CACHE);
 		redisUtil.removeAll(CacheConstant.SYS_DICT_TABLE_CACHE);
@@ -488,15 +589,15 @@ public class SysDictController {
 		redisUtil.removeAll(CacheConstant.SYS_DEPART_IDS_CACHE);
 		redisUtil.removeAll("jmreport:cache:dict");
 		redisUtil.removeAll("jmreport:cache:dictTable");
-		//update-end-author:liusq date:20230404 for:  [issue/4358]springCache中的清除缓存的操作使用了“keys”
 		
-		//update-begin---author:scott ---date:2024-06-18  for：【TV360X-1320】分配权限必须退出重新登录才生效，造成很多用户困扰---
 		// 清除当前用户的授权缓存信息
 		Subject currentUser = SecurityUtils.getSubject();
 		if (currentUser.isAuthenticated()) {
 			shiroRealm.clearCache(currentUser.getPrincipals());
 		}
-		//update-end---author:scott ---date::2024-06-18  for：【TV360X-1320】分配权限必须退出重新登录才生效，造成很多用户困扰---
+
+		// 清空默认首页缓存（开源版和商业版会串）
+		redisUtil.del(DefIndexConst.CACHE_KEY + "::" + DefIndexConst.DEF_INDEX_ALL);
 		return result;
 	}
 
@@ -540,7 +641,7 @@ public class SysDictController {
 		mv.addObject(NormalExcelConstants.CLASS, SysDictPage.class);
 		// 自定义表格参数
 		LoginUser user = (LoginUser) SecurityUtils.getSubject().getPrincipal();
-		mv.addObject(NormalExcelConstants.PARAMS, new ExportParams("数据字典列表", "导出人:"+user.getRealname(), "数据字典"));
+		mv.addObject(NormalExcelConstants.PARAMS, new ExportParams("数据字典列表", "导出人:"+user.getRealname(), "数据字典", ExcelType.XSSF));
 		// 导出数据列表
 		mv.addObject(NormalExcelConstants.DATA_LIST, pageList);
 		return mv;
@@ -583,21 +684,19 @@ public class SysDictController {
 						Integer integer = sysDictService.saveMain(po, list.get(i).getSysDictItemList());
 						if(integer>0){
 							successLines++;
-                        //update-begin---author:wangshuai ---date:20220211  for：[JTC-1168]如果字典项值为空，则字典项忽略导入------------
+                        // 代码逻辑说明: [JTC-1168]如果字典项值为空，则字典项忽略导入------------
 						}else if(integer == -1){
                             errorLines++;
                             errorMessage.add("字典名称：" + po.getDictName() + "，对应字典列表的字典项值不能为空，忽略导入。");
                         }else{
-                        //update-end---author:wangshuai ---date:20220211  for：[JTC-1168]如果字典项值为空，则字典项忽略导入------------
 							errorLines++;
 							int lineNumber = i + 1;
-                            //update-begin---author:wangshuai ---date:20220209  for：[JTC-1168]字典编号不能为空------------
+                            // 代码逻辑说明: [JTC-1168]字典编号不能为空------------
                             if(oConvertUtils.isEmpty(po.getDictCode())){
                                 errorMessage.add("第 " + lineNumber + " 行：字典编码不能为空，忽略导入。");
                             }else{
                                 errorMessage.add("第 " + lineNumber + " 行：字典编码已经存在，忽略导入。");
                             }
-                            //update-end---author:wangshuai ---date:20220209  for：[JTC-1168]字典编号不能为空------------
                         }
 					}  catch (Exception e) {
 						errorLines++;
@@ -664,6 +763,45 @@ public class SysDictController {
 		} catch (Exception e) {
 			e.printStackTrace();
 			return Result.error("操作失败!");
+		}
+	}
+	/**
+	 * 还原被逻辑删除的用户
+	 *
+	 * @param jsonObject
+	 * @return
+	 */
+	@RequestMapping(value = "/putRecycleBin", method = RequestMethod.PUT)
+	public Result putRecycleBin(@RequestBody JSONObject jsonObject, HttpServletRequest request) {
+		try {
+			String ids = jsonObject.getString("ids");
+			if (StringUtils.isNotBlank(ids)) {
+				sysDictService.revertLogicDeleted(Arrays.asList(ids.split(",")));
+				return Result.ok("操作成功!");
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			return Result.error("操作失败!");
+		}
+		return Result.ok("还原成功");
+	}
+	/**
+	 * 彻底删除字典
+	 *
+	 * @param ids 被删除的字典ID，多个id用半角逗号分割
+	 * @return
+	 */
+	@RequiresPermissions("system:dict:deleteRecycleBin")
+	@RequestMapping(value = "/deleteRecycleBin", method = RequestMethod.DELETE)
+	public Result deleteRecycleBin(@RequestParam("ids") String ids) {
+		try {
+			if (StringUtils.isNotBlank(ids)) {
+				sysDictService.removeLogicDeleted(Arrays.asList(ids.split(",")));
+			}
+			return Result.ok("删除成功!");
+		} catch (Exception e) {
+			e.printStackTrace();
+			return Result.error("删除失败!");
 		}
 	}
 

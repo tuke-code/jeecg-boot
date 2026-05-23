@@ -1,12 +1,10 @@
 <!--职务选择组件-->
 <template>
   <div class="JSelectPosition">
-    <JSelectBiz @handleOpen="handleOpen" :loading="loadingEcho" v-bind="attrs"></JSelectBiz>
-    <!-- update-begin--author:liaozhiyang---date:20240515---for：【QQYUN-9260】必填模式下会影响到弹窗内antd组件的样式 -->
+    <JSelectBiz @handleOpen="handleOpen" :loading="loadingEcho" v-bind="attrs" @change="(changeValue) => $emit('update:value', changeValue)"></JSelectBiz>
     <a-form-item>
       <PositionSelectModal @register="regModal" @getSelectResult="setValue" v-bind="getBindValue"></PositionSelectModal>
     </a-form-item>
-    <!-- update-end--author:liaozhiyang---date:20240515---for：【QQYUN-9260】必填模式下会影响到弹窗内antd组件的样式 -->
   </div>
 </template>
 <script lang="ts">
@@ -51,7 +49,7 @@
       //下拉框选项值
       const selectOptions = ref<SelectValue>([]);
       //下拉框选中值
-      let selectValues = reactive<object>({
+      let selectValues = reactive<any>({
         value: [],
         change: false,
       });
@@ -70,9 +68,21 @@
       /**
        * 监听组件值
        */
-      watchEffect(() => {
-        props.value && initValue();
-      });
+      // 代码逻辑说明: 【pull/8014】插槽方式弹窗中取消该数据checkbox的选中状态，需要点击第二次才生效。
+      watch(
+        () => props.value,
+        () => {
+          if (props.value) {
+            initValue();
+          } else {
+            // 代码逻辑说明: 【issues/8233】resetFields时无法重置
+            if (selectValues.value?.length) {
+              selectValues.value = [];
+            }
+          }
+        },
+        { deep: true, immediate: true }
+      );
 
       /**
        * 监听selectValues变化
@@ -112,9 +122,8 @@
         //emitData.value = values.join(",");
         state.value = values;
         selectValues.value = values;
-        //update-begin-author:liusq date:20230517 for:选择职务组件v-model方式绑定值不生效
+        // 代码逻辑说明: 选择职务组件v-model方式绑定值不生效
         emit('update:value', values.join(','));
-        //update-begin-author:liusq date:20230517 for:选择职务组件v-model方式绑定值不生效
 
       }
 
@@ -135,13 +144,12 @@
   });
 </script>
 <style lang="less" scoped>
-  // update-begin--author:liaozhiyang---date:20240515---for：【QQYUN-9260】必填模式下会影响到弹窗内antd组件的样式
+  // 代码逻辑说明: 【QQYUN-9260】必填模式下会影响到弹窗内antd组件的样式
   .JSelectPosition {
     > .ant-form-item {
       display: none;
     }
   }
-  // update-end--author:liaozhiyang---date:20240515---for：【QQYUN-9260】必填模式下会影响到弹窗内antd组件的样式
   .j-select-row {
     @width: 82px;
 

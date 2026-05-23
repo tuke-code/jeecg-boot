@@ -1,16 +1,22 @@
 import type { App } from 'vue';
 // 引入 vxe-table
 import 'xe-utils';
+import VxeUIAll from 'vxe-pc-ui';
 import VXETable /*Grid*/ from 'vxe-table';
 import VXETablePluginAntd from 'vxe-table-plugin-antd';
+import 'vxe-pc-ui/lib/style.css';
 import 'vxe-table/lib/style.css';
 
-import JVxeTable from './JVxeTable';
 import { getEventPath } from '/@/utils/common/compUtils';
 import { registerAllComponent } from './utils/registerUtils';
 import { getEnhanced } from './utils/enhancedUtils';
+import type { JVxeTypes } from './types/JVxeTypes';
+export interface RegisterJVxeTableOptions {
+  /** 仅注册指定的内置类型；不传则注册全部内置组件 */
+  builtinComponents?: JVxeTypes[];
+}
 
-export function registerJVxeTable(app: App) {
+export async function registerJVxeTable(app: App) {
   // VXETable 全局配置
   const VXETableSettings = {
     // z-index 起始值
@@ -27,8 +33,8 @@ export function registerJVxeTable(app: App) {
   // 注册自定义组件
   registerAllComponent();
   // 执行注册方法
+  app.use(VxeUIAll);
   app.use(VXETable, VXETableSettings);
-  app.component('JVxeTable', JVxeTable);
 }
 
 
@@ -39,6 +45,11 @@ export function registerJVxeTable(app: App) {
 function preventClosingPopUp(this: any, params) {
   // 获取组件增强
   let col = params.column.params;
+  // 代码逻辑说明: 【issues/8178】使用原生vxe-table组件编辑模式下失去焦点报错
+  if (col === undefined) {
+    // 说明使用的是纯原生的vxe-table
+    return;
+  }
   let { $event } = params;
   const interceptor = getEnhanced(col.type).interceptor;
   // 执行增强

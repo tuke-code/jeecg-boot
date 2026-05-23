@@ -1,6 +1,6 @@
 package org.jeecg.modules.oss.controller;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.apache.shiro.authz.annotation.RequiresRoles;
@@ -32,6 +32,7 @@ public class OssFileController {
 	private IOssFileService ossFileService;
 
 	@ResponseBody
+	@RequiresPermissions("system:ossFile:list")
 	@GetMapping("/list")
 	public Result<IPage<OssFile>> queryPageList(OssFile file,
                                                 @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
@@ -63,6 +64,7 @@ public class OssFileController {
 	}
 
 	@ResponseBody
+	@RequiresPermissions("system:ossFile:delete")
 	@DeleteMapping("/delete")
 	public Result delete(@RequestParam(name = "id") String id) {
 		Result result = new Result();

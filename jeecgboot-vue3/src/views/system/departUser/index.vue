@@ -12,10 +12,10 @@
             <DepartBaseInfoTab :data="departData" />
           </a-tab-pane>
           <a-tab-pane tab="用户信息" key="user-info">
-            <DepartUserInfoTab :data="departData" />
+            <DepartUserInfoTab :key="reRender" :data="departData" />
           </a-tab-pane>
           <a-tab-pane tab="部门角色" key="role-info">
-            <DepartRoleInfoTab :data="departData" />
+            <DepartRoleInfoTab :key="reRender" :data="departData" />
           </a-tab-pane>
         </a-tabs>
       </a-card>
@@ -38,8 +38,15 @@
   // 当前选中的部门信息
   let departData = ref({});
 
+  const reRender = ref(-1);
+
   // 左侧树选择后触发
   function onTreeSelect(data) {
+    // 代码逻辑说明: 【issues/7658】我的部门无部门列表数据时，点击查询或者重置能查出数据
+    if (reRender.value == -1) {
+      // 重新渲染组件
+      reRender.value = Math.random();
+    }
     departData.value = data;
   }
 </script>

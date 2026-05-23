@@ -10,8 +10,10 @@
         <a-menu>
           <a-menu-item key="0" :disabled="disabledMoveUp" @click="handleRowMoveUp">向上移</a-menu-item>
           <a-menu-item key="1" :disabled="disabledMoveDown" @click="handleRowMoveDown">向下移</a-menu-item>
-          <a-menu-divider />
-          <a-menu-item key="3" @click="handleRowInsertDown">插入一行</a-menu-item>
+          <template v-if="allowInsertRow">
+            <a-menu-divider />
+            <a-menu-item key="3" @click="handleRowInsertDown">插入一行</a-menu-item>
+          </template>
         </a-menu>
       </template>
     </a-dropdown>
@@ -30,7 +32,7 @@
     props: useJVxeCompProps(),
     setup(props: JVxeComponent.Props) {
       const { rowIndex, originColumn, fullDataLength, trigger } = useJVxeComponent(props);
-      // update-begin--author:liaozhiyang---date:20240417---for:【QQYUN-8785】online表单列位置的id未做限制，拖动其他列到id列上面，同步数据库时报错
+      // 代码逻辑说明: 【QQYUN-8785】online表单列位置的id未做限制，拖动其他列到id列上面，同步数据库时报错
       const isAllowDrag = computed(() => {
         const notAllowDrag = originColumn.value.notAllowDrag;
         if (notAllowDrag.length) {
@@ -44,9 +46,11 @@
           return true;
         }
       });
-      // update-end--author:liaozhiyang---date:20240417---for:【QQYUN-8785】online表单列位置的id未做限制，拖动其他列到id列上面，同步数据库时报错
       const disabledMoveUp = computed(() => rowIndex.value === 0);
       const disabledMoveDown = computed(() => rowIndex.value === fullDataLength.value - 1);
+
+      // 是否允许插入行
+      const allowInsertRow = computed(() => originColumn.value.insertRow);
 
       /** 向上移 */
       function handleRowMoveUp() {
@@ -79,7 +83,8 @@
         handleRowMoveUp,
         handleRowMoveDown,
         handleRowInsertDown,
-        isAllowDrag
+        isAllowDrag,
+        allowInsertRow,
       };
     },
     // 【组件增强】注释详见：JVxeComponent.Enhanced

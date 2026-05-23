@@ -55,13 +55,11 @@ public class MinioUtil {
      */
     public static String upload(MultipartFile file, String bizPath, String customBucket) throws Exception {
         String fileUrl = "";
-        //update-begin-author:wangshuai date:20201012 for: 过滤上传文件夹名特殊字符，防止攻击
+        // 业务路径过滤，防止攻击
         bizPath = StrAttackFilter.filter(bizPath);
-        //update-end-author:wangshuai date:20201012 for: 过滤上传文件夹名特殊字符，防止攻击
 
-        //update-begin-author:liusq date:20210809 for: 过滤上传文件类型
-        SsrfFileTypeFilter.checkUploadFileType(file);
-        //update-end-author:liusq date:20210809 for: 过滤上传文件类型
+        // 文件安全校验，防止上传漏洞文件
+        SsrfFileTypeFilter.checkUploadFileType(file, bizPath);
 
         String newBucket = bucketName;
         if(oConvertUtils.isNotEmpty(customBucket)){
@@ -154,20 +152,21 @@ public class MinioUtil {
     }
 
     /**
-     * 获取文件外链
-     * @param bucketName
-     * @param objectName
-     * @param expires
-     * @return
+     * 获取私有桶文件的预签名访问URL（带过期时间）
+     * 通过MinIO预签名机制生成临时GET链接，无需公开桶即可让外部访问文件
+     *
+     * @param bucketName 桶名称
+     * @param objectName 文件对象路径（如 "eoafile/2026/04/test.pdf"）
+     * @param expires    链接有效期，单位：秒（注意不是天）
+     * @return 预签名URL，失败返回null
      */
     public static String getObjectUrl(String bucketName, String objectName, Integer expires) {
         initMinio(minioUrl, minioName,minioPass);
         try{
-            //update-begin---author:liusq  Date:20220121  for：获取文件外链报错提示method不能为空，导致文件下载和预览失败----
+            // 代码逻辑说明: 获取文件外链报错提示method不能为空，导致文件下载和预览失败----
             GetPresignedObjectUrlArgs objectArgs = GetPresignedObjectUrlArgs.builder().object(objectName)
                     .bucket(bucketName)
                     .expiry(expires).method(Method.GET).build();
-            //update-begin---author:liusq  Date:20220121  for：获取文件外链报错提示method不能为空，导致文件下载和预览失败----
             String url = minioClient.getPresignedObjectUrl(objectArgs);
             return URLDecoder.decode(url,"UTF-8");
         }catch (Exception e){
@@ -198,10 +197,13 @@ public class MinioUtil {
     }
 
     /**
-     * 上传文件到minio
-     * @param stream
-     * @param relativePath
-     * @return
+     * 通过输入流上传文件到MinIO默认桶
+     * 若桶不存在会自动创建，上传成功后关闭输入流
+     *
+     * @param stream       文件输入流
+     * @param relativePath 文件在桶中的相对路径（如 "upload/2026/04/test.pdf"）
+     * @return 文件完整访问URL（格式：minioUrl + bucketName + "/" + relativePath）
+     * @throws Exception 桶操作或上传过程中的异常
      */
     public static String upload(InputStream stream,String relativePath) throws Exception {
         initMinio(minioUrl, minioName,minioPass);

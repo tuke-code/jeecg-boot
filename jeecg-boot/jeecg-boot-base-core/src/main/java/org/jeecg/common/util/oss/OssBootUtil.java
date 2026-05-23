@@ -97,9 +97,8 @@ public class OssBootUtil {
      * @return oss 中的相对文件路径
      */
     public static String upload(MultipartFile file, String fileDir,String customBucket) throws Exception {
-        //update-begin-author:liusq date:20210809 for: 过滤上传文件类型
+        // 文件安全校验，防止上传漏洞文件
         SsrfFileTypeFilter.checkUploadFileType(file);
-        //update-end-author:liusq date:20210809 for: 过滤上传文件类型
 
         String filePath = null;
         initOss(endPoint, accessKeyId, accessKeySecret);
@@ -125,9 +124,8 @@ public class OssBootUtil {
             if (!fileDir.endsWith(SymbolConstant.SINGLE_SLASH)) {
                 fileDir = fileDir.concat(SymbolConstant.SINGLE_SLASH);
             }
-            //update-begin-author:wangshuai date:20201012 for: 过滤上传文件夹名特殊字符，防止攻击
+            // 代码逻辑说明: 过滤上传文件夹名特殊字符，防止攻击
             fileDir=StrAttackFilter.filter(fileDir);
-            //update-end-author:wangshuai date:20201012 for: 过滤上传文件夹名特殊字符，防止攻击
             fileUrl = fileUrl.append(fileDir + fileName);
 
             if (oConvertUtils.isNotEmpty(staticDomain) && staticDomain.toLowerCase().startsWith(CommonConstant.STR_HTTP)) {
@@ -251,10 +249,12 @@ public class OssBootUtil {
     }
 
     /**
-     * 获取文件流
-     * @param objectName
-     * @param bucket
-     * @return
+     * 获取指定桶（私有桶）中的文件流
+     * 通过OSS SDK直接读取文件内容，支持指定自定义桶名（如 "eoafile"），为空则使用默认桶
+     *
+     * @param objectName 文件对象路径（如 "eoafile/2026/04/test.pdf"，会自动替换前缀）
+     * @param bucket     自定义桶名称，为空则使用默认桶
+     * @return 文件输入流，失败返回null
      */
     public static InputStream getOssFile(String objectName,String bucket){
         InputStream inputStream = null;
@@ -264,9 +264,8 @@ public class OssBootUtil {
                 newBucket = bucket;
             }
             initOss(endPoint, accessKeyId, accessKeySecret);
-            //update-begin---author:liusq  Date:20220120  for：替换objectName前缀，防止key不一致导致获取不到文件----
+            // 代码逻辑说明: 替换objectName前缀，防止key不一致导致获取不到文件----
             objectName = OssBootUtil.replacePrefix(objectName,bucket);
-            //update-end---author:liusq  Date:20220120  for：替换objectName前缀，防止key不一致导致获取不到文件----
             OSSObject ossObject = ossClient.getObject(newBucket,objectName);
             inputStream = new BufferedInputStream(ossObject.getObjectContent());
         }catch (Exception e){
@@ -285,18 +284,19 @@ public class OssBootUtil {
     //}
 
     /**
-     * 获取文件外链
-     * @param bucketName
-     * @param objectName
-     * @param expires
-     * @return
+     * 获取私有桶文件的预签名访问URL（带过期时间）
+     * 通过OSS预签名机制生成临时访问链接，无需公开桶即可让外部下载/预览文件
+     *
+     * @param bucketName 桶名称（如 "eoafile"）
+     * @param objectName 文件对象路径（会自动替换前缀）
+     * @param expires    链接过期时间点（Date类型，如1天后过期）
+     * @return 预签名URL字符串，文件不存在或失败返回null
      */
     public static String getObjectUrl(String bucketName, String objectName, Date expires) {
         initOss(endPoint, accessKeyId, accessKeySecret);
         try{
-            //update-begin---author:liusq  Date:20220120  for：替换objectName前缀，防止key不一致导致获取不到文件----
+            // 代码逻辑说明: 替换objectName前缀，防止key不一致导致获取不到文件----
             objectName = OssBootUtil.replacePrefix(objectName,bucketName);
-            //update-end---author:liusq  Date:20220120  for：替换objectName前缀，防止key不一致导致获取不到文件----
             if(ossClient.doesObjectExist(bucketName,objectName)){
                 URL url = ossClient.generatePresignedUrl(bucketName,objectName,expires);
                 //log.info("原始url : {}", url.toString());
@@ -326,10 +326,12 @@ public class OssBootUtil {
 
 
     /**
-     * 上传文件到oss
-     * @param stream
-     * @param relativePath
-     * @return
+     * 通过输入流上传文件到阿里云OSS默认桶
+     * 上传后设置桶为公开读权限，返回文件完整访问URL
+     *
+     * @param stream       文件输入流
+     * @param relativePath 文件在桶中的相对路径（如 "upload/2026/04/test.pdf"）
+     * @return 文件完整访问URL（优先使用staticDomain，否则拼接 bucketName.endPoint）
      */
     public static String upload(InputStream stream, String relativePath) {
         String filePath = null;

@@ -1,4 +1,4 @@
-import type { VNodeChild } from 'vue';
+import type { VNodeChild, ComputedRef } from 'vue';
 import type { PaginationProps } from './pagination';
 import type { FormProps } from '/@/components/Form';
 import type { TableRowSelection as ITableRowSelection } from 'ant-design-vue/lib/table/interface';
@@ -25,7 +25,7 @@ export interface TableRowSelection<T = any> extends ITableRowSelection {
    * Callback executed when select/deselect one row
    * @type Function
    */
-  onSelect?: (record: T, selected: boolean, selectedRows: Object[], nativeEvent: Event) => any;
+  onSelect?: (record: T, selected: boolean, selectedRows: Object[]) => any;
 
   /**
    * Callback executed when select/deselect all rows
@@ -38,6 +38,8 @@ export interface TableRowSelection<T = any> extends ITableRowSelection {
    * @type Function
    */
   onSelectInvert?: (selectedRows: string[] | number[]) => any;
+  //【issues/8163】关联记录新增丢失
+  selectedRows?: any[];
 }
 
 export interface TableCustomRecord<T> {
@@ -78,6 +80,9 @@ export interface FetchParams {
 export interface GetColumnsParams {
   ignoreIndex?: boolean;
   ignoreAction?: boolean;
+  // 代码逻辑说明: 【issues/8502】解决权限列在列表中不显示，列配置中还显示
+  ignoreAuth?: boolean;
+  ignoreIfShow?: boolean | ((column: BasicColumn) => boolean);
   sort?: boolean;
 }
 
@@ -114,6 +119,8 @@ export interface TableActionType {
   setShowPagination: (show: boolean) => Promise<void>;
   getShowPagination: () => boolean;
   setCacheColumnsByField?: (dataIndex: string | undefined, value: BasicColumn) => void;
+  getColumnsRef: () => ComputedRef<BasicColumn[]>;
+  getBindValuesRef: () => ComputedRef<any>;
 }
 
 export interface FetchSetting {
@@ -183,7 +190,7 @@ export interface BasicTableProps<T = any> {
   // 额外的请求参数
   searchInfo?: Recordable;
   // 默认的排序参数
-  defSort?: Recordable;
+  defSort?: Recordable | Recordable[];
   // 使用搜索表单
   useSearchForm?: boolean;
   // 表单配置
@@ -199,7 +206,7 @@ export interface BasicTableProps<T = any> {
   // 是否显示操作列
   showActionColumn?: boolean;
   // 操作列配置
-  actionColumn?: BasicColumn;
+  actionColumn?: Partial<BasicColumn>;
   // 文本超过宽度是否显示。。。
   ellipsis?: boolean;
   // 是否可以自适应高度
@@ -220,6 +227,8 @@ export interface BasicTableProps<T = any> {
   maxHeight?: number;
   // 是否显示边框
   bordered?: boolean;
+  // 展开列宽度
+  expandColumnWidth: number;
   // 分页配置
   pagination?: PaginationProps | boolean;
   // loading加载
@@ -319,9 +328,8 @@ export interface BasicTableProps<T = any> {
    * you need to add style .ant-table td { white-space: nowrap; }.
    * @type object
    */
-  // update-begin--author:liaozhiyang---date:20240424---for：【issues/1188】BasicTable加上scrollToFirstRowOnChange类型定义
+  // 代码逻辑说明: 【issues/1188】BasicTable加上scrollToFirstRowOnChange类型定义
   scroll?: { x?: number | true | 'max-content'; y?: number; scrollToFirstRowOnChange?: boolean };
-  // update-end--author:liaozhiyang---date:20240424---for：【issues/1188】BasicTable加上scrollToFirstRowOnChange类型定义
 
   /**
    * Whether to show table header
@@ -426,6 +434,8 @@ export interface BasicColumn extends ColumnProps<Recordable> {
 
   //
   flag?: 'INDEX' | 'DEFAULT' | 'CHECKBOX' | 'RADIO' | 'ACTION';
+  // 代码逻辑说明: 【issues/6908】多语言无刷新切换时，BasicColumn和FormSchema里面的值不能正常切换
+  title: string | Fn;
   customTitle?: VueNode;
 
   slots?: Recordable;
@@ -445,7 +455,8 @@ export interface BasicColumn extends ColumnProps<Recordable> {
   editRow?: boolean;
   editable?: boolean;
   editComponent?: ComponentType;
-  editComponentProps?: Recordable;
+  // 代码逻辑说明: 【issues/8680】editComponentProps可接受一个函数传入record
+  editComponentProps?: Recordable | ((record: Recordable) => Recordable);
   editRule?: boolean | ((text: string, record: Recordable) => Promise<string>);
   editValueMap?: (value: any) => string;
   onEditRow?: () => void;
@@ -455,7 +466,7 @@ export interface BasicColumn extends ColumnProps<Recordable> {
   ifShow?: boolean | ((column: BasicColumn) => boolean);
   //compType-用于记录类型
   compType?: string;
-  // update-begin--author:liaozhiyang---date:20240425---for：【pull/1201】添加antd的TableSummary功能兼容老的summary（表尾合计）
+  // 代码逻辑说明: 【pull/1201】添加antd的TableSummary功能兼容老的summary（表尾合计）
   customSummaryRender?: (opt: {
     value: any;
     text: any;
@@ -464,7 +475,8 @@ export interface BasicColumn extends ColumnProps<Recordable> {
     renderIndex?: number;
     column: BasicColumn;
   }) => any | VNodeChild | JSX.Element;
-  // update-end--author:liaozhiyang---date:20240425---for：【pull/1201】添加antd的TableSummary功能兼容老的summary（表尾合计）
+  // 额外的属性
+  extraProps?: Recordable;
 }
 
 export type ColumnChangeParam = {

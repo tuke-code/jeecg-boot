@@ -8,6 +8,7 @@
       :showUploadList="false"
       :data="getBizData()"
       :headers="getheader()"
+      :before-upload="beforeUpload"
       accept=".jpg,.jpeg,.gif,.png,.webp"
     >
       <a-button type="primary" v-bind="{ ...getButtonProps }">
@@ -17,13 +18,12 @@
   </div>
 </template>
 <script lang="ts">
-  import { defineComponent, computed } from 'vue';
+  import { defineComponent, computed, ref } from 'vue';
 
   import { Upload } from 'ant-design-vue';
   import { useDesign } from '/@/hooks/web/useDesign';
   import { useGlobSetting } from '/@/hooks/setting';
   import { useI18n } from '/@/hooks/web/useI18n';
-  import { getToken } from '/@/utils/auth';
   import { getFileAccessHttpUrl, getHeaders } from '/@/utils/common/compUtils';
 
   export default defineComponent({
@@ -38,11 +38,9 @@
         default: false,
       },
     },
-    emits: ['uploading', 'done', 'error'],
+    emits: ['uploading', 'done', 'error', 'loading'],
     setup(props, { emit }) {
-      let uploading = false;
-
-      //update-begin-author:taoyan date:2022-5-13 for: 富文本上传图片不支持
+      // 代码逻辑说明: 富文本上传图片不支持
       function getheader() {
         return getHeaders();
       }
@@ -55,7 +53,8 @@
       }
       const { domainUrl } = useGlobSetting();
       const uploadUrl = domainUrl + '/sys/common/upload';
-      //update-end-author:taoyan date:2022-5-13 for: 富文本上传图片不支持
+      //文件列表
+      let uploadFileList = ref<any[]>([]);
       const { t } = useI18n();
       const { prefixCls } = useDesign('tinymce-img-upload');
 
@@ -66,29 +65,37 @@
         };
       });
 
-      function handleChange(info: Recordable) {
-        const file = info.file;
-        const status = file?.status;
-        //const url = file?.response?.url;
-        const name = file?.name;
-
-        if (status === 'uploading') {
-          if (!uploading) {
-            emit('uploading', name);
-            uploading = true;
-          }
-        } else if (status === 'done') {
-          //update-begin-author:taoyan date:2022-5-13 for: 富文本上传图片不支持
-          let realUrl = getFileAccessHttpUrl(file.response.message);
-          emit('done', name, realUrl);
-          //update-end-author:taoyan date:2022-5-13 for: 富文本上传图片不支持
-          uploading = false;
-        } else if (status === 'error') {
-          emit('error');
-          uploading = false;
+      let uploadLength = 0;
+      function handleChange({ file, fileList }) {
+        // 过滤掉已经存在的文件
+        fileList = fileList.filter((file) => {
+          const existFile = uploadFileList.value.find(({ uid }) => uid === file.uid);
+          return existFile ? false : true;
+        });
+        uploadLength == 0 && (uploadLength = fileList.length);
+        if (file.status != 'uploading') {
+          emit('loading', uploadLength, true);
+        }
+        // 处理上传好的文件
+        if (file.status != 'uploading') {
+          fileList.forEach((file) => {
+            if (file.status === 'done' && file.response.success) {
+              const name = file?.name;
+              let realUrl = getFileAccessHttpUrl(file.response.message);
+              uploadFileList.value.push(file);
+              emit('done', name, realUrl);
+            }
+          });
         }
       }
-
+      //上传之前
+      function beforeUpload() {
+        uploadLength = 0;
+        emit('loading', null, true);
+        setTimeout(() => {
+          emit('loading', null, false);
+        }, 10000);
+      }
       return {
         prefixCls,
         handleChange,
@@ -97,6 +104,8 @@
         getBizData,
         t,
         getButtonProps,
+        uploadFileList,
+        beforeUpload,
       };
     },
   });
@@ -111,17 +120,15 @@
       position: fixed;
       z-index: 10000;
     }
-    // update-begin--author:liaozhiyang---date:20230326---for：【QQYUN-8647】online tinymce组件上传图片按遮挡了控件栏的全屏按钮
+    // 代码逻辑说明: 【QQYUN-8647】online tinymce组件上传图片按遮挡了控件栏的全屏按钮
     .ant-btn {
       padding: 2px 4px;
       font-size: 12px;
       height: 24px;
-      // update-begin--author:liaozhiyang---date:20240524---for：【TV360X-235】富文本禁用状态下图片上传按钮文字看不清
+      // 代码逻辑说明: 【TV360X-235】富文本禁用状态下图片上传按钮文字看不清
       &.is-disabled {
         color: rgba(255, 255, 255, 0.5);
       }
-      // update-end--author:liaozhiyang---date:20240524---for：【TV360X-235】富文本禁用状态下图片上传按钮文字看不清
     }
-    // update-end--author:liaozhiyang---date:20230326---for：【QQYUN-8647】online tinymce组件上传图片按遮挡了控件栏的全屏按钮
   }
 </style>

@@ -1,9 +1,11 @@
 package org.jeecg.modules.system.service.impl;
 
 import cn.hutool.core.util.ObjectUtil;
+import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.CollectionUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.jeecg.qywx.api.base.JwAccessTokenAPI;
 import com.jeecg.qywx.api.core.common.AccessToken;
@@ -42,6 +44,7 @@ import org.jeecg.modules.system.entity.*;
 import org.jeecg.modules.system.mapper.*;
 import org.jeecg.modules.system.model.SysDepartTreeModel;
 import org.jeecg.modules.system.service.*;
+import org.jeecg.modules.system.vo.SysPositionVO;
 import org.jeecg.modules.system.vo.thirdapp.JwDepartmentTreeVo;
 import org.jeecg.modules.system.vo.thirdapp.JwSysUserDepartVo;
 import org.jeecg.modules.system.vo.thirdapp.JwUserDepartVo;
@@ -102,11 +105,10 @@ public class ThirdAppWechatEnterpriseServiceImpl implements IThirdAppService {
 
     @Override
     public String getAccessToken() {
-        //update-begin---author:wangshuai ---date:20230224  for：[QQYUN-3440]新建企业微信和钉钉配置表，通过租户模式隔离------------
+        // 代码逻辑说明: [QQYUN-3440]新建企业微信和钉钉配置表，通过租户模式隔离------------
         SysThirdAppConfig config = this.getWeChatThirdAppConfig();
         String corpId = config.getClientId();
         String secret = config.getClientSecret();
-        //update-end---author:wangshuai ---date:20230224  for：[QQYUN-3440]新建企业微信和钉钉配置表，通过租户模式隔离------------
         AccessToken accessToken = JwAccessTokenAPI.getAccessToken(corpId, secret);
         if (accessToken != null) {
             return accessToken.getAccesstoken();
@@ -117,14 +119,10 @@ public class ThirdAppWechatEnterpriseServiceImpl implements IThirdAppService {
 
     /** 获取APPToken，新版企业微信的秘钥是分开的 */
     public String getAppAccessToken(SysThirdAppConfig config) {
-        //update-begin---author:wangshuai ---date:20230224  for：[QQYUN-3440]新建企业微信和钉钉配置表，通过租户模式隔离------------
+        // 代码逻辑说明: [QQYUN-3440]新建企业微信和钉钉配置表，通过租户模式隔离------------
         String corpId = config.getClientId();
-        String secret = config.getAgentAppSecret();
         // 如果没有配置APP秘钥，就说明是老企业，可以通用秘钥
-        if (oConvertUtils.isEmpty(secret)) {
-            secret = config.getClientSecret();
-        //update-end---author:wangshuai ---date:20230224  for：[QQYUN-3440]新建企业微信和钉钉配置表，通过租户模式隔离------------
-        }
+        String secret = config.getClientSecret();
 
         AccessToken accessToken = JwAccessTokenAPI.getAccessToken(corpId, secret);
         if (accessToken != null) {
@@ -284,9 +282,8 @@ public class ThirdAppWechatEnterpriseServiceImpl implements IThirdAppService {
                 if (sysDepart != null) {
                     //  执行更新操作
                     SysDepart updateSysDepart = this.qwDepartmentToSysDepart(departmentTree, sysDepart);
-                    //update-begin---author:wangshuai---date:2024-04-10---for:【issues/6017】企业微信同步部门时没有最顶层的部门名，同步用户时，用户没有部门信息---
+                    // 代码逻辑说明: 【issues/6017】企业微信同步部门时没有最顶层的部门名，同步用户时，用户没有部门信息---
                     if (sysParentId != null && !"0".equals(sysParentId)) {
-                    //update-end---author:wangshuai---date:2024-04-10---for:【issues/6017】企业微信同步部门时没有最顶层的部门名，同步用户时，用户没有部门信息---
                         updateSysDepart.setParentId(sysParentId);
                     }
                     try {
@@ -358,6 +355,40 @@ public class ThirdAppWechatEnterpriseServiceImpl implements IThirdAppService {
             // 获取本地所有用户
             sysUsers = userMapper.selectList(Wrappers.emptyWrapper());
         }
+        if (CollectionUtils.isEmpty(sysUsers)) {
+            return syncInfo;
+        }
+        //update-begin---author:sjlei ---date:2026-04-17  for：【#9496】全量同步N+1查询性能优化-----------
+        List<String> userIds = sysUsers.stream().map(SysUser::getId).collect(Collectors.toList());
+        // ① 批量预加载 sys_third_account → Map<sysUserId, SysThirdAccount>
+        Map<String, SysThirdAccount> thirdAccountMap = sysThirdAccountService
+                .listBySysUserIds(userIds, THIRD_TYPE)
+                .stream()
+                .collect(Collectors.toMap(SysThirdAccount::getSysUserId, a -> a, (a, b) -> a));
+        // ② 批量预加载用户-部门关系 → Map<userId, List<departId>>
+        LambdaQueryWrapper<SysUserDepart> udQw = new LambdaQueryWrapper<>();
+        udQw.in(SysUserDepart::getUserId, userIds);
+        Map<String, List<String>> userDepartIdsMap = sysUserDepartService.list(udQw)
+                .stream()
+                .collect(Collectors.groupingBy(
+                        SysUserDepart::getUserId,
+                        Collectors.mapping(SysUserDepart::getDepId, Collectors.toList())
+                ));
+        // ③ 批量预加载所有涉及的部门 → Map<departId, SysDepart>
+        Set<String> allDepartIds = userDepartIdsMap.values().stream()
+                .flatMap(Collection::stream).collect(Collectors.toSet());
+        Map<String, SysDepart> departMap = Collections.emptyMap();
+        if (!allDepartIds.isEmpty()) {
+            departMap = sysDepartService.listByIds(allDepartIds)
+                    .stream()
+                    .collect(Collectors.toMap(SysDepart::getId, d -> d, (a, b) -> a));
+        }
+        // ④ 批量预加载职位 → Map<userId, List<SysPositionVO>>
+        Map<String, List<SysPositionVO>> positionMap = sysPositionService
+                .getPositionListByUserIds(userIds)
+                .stream()
+                .collect(Collectors.groupingBy(SysPositionVO::getUserId));
+        //update-end---author:sjlei ---date:2026-04-17  for：【#9496】全量同步N+1查询性能优化-----------
 
         // 循环判断新用户和需要更新的用户
         for1:
@@ -372,7 +403,9 @@ public class ThirdAppWechatEnterpriseServiceImpl implements IThirdAppService {
              * 2. 本地表里没有，就先用手机号判断，不通过再用username判断。
              */
             User qwUser;
-            SysThirdAccount sysThirdAccount = sysThirdAccountService.getOneBySysUserId(sysUser.getId(), THIRD_TYPE);
+            //update-begin---author:sjlei ---date:2026-04-17  for：【#9496】全量同步N+1查询性能优化-----------
+            SysThirdAccount sysThirdAccount = thirdAccountMap.get(sysUser.getId());
+            //update-end---author:sjlei ---date:2026-04-17  for：【#9496】全量同步N+1查询性能优化-----------
             for (User qwUserTemp : qwUsers) {
                 if (sysThirdAccount == null || oConvertUtils.isEmpty(sysThirdAccount.getThirdUserId()) || !sysThirdAccount.getThirdUserId().equals(qwUserTemp.getUserid())) {
                     // sys_third_account 表匹配失败，尝试用手机号匹配
@@ -388,7 +421,9 @@ public class ThirdAppWechatEnterpriseServiceImpl implements IThirdAppService {
 //                    }
                 }
                 // 循环到此说明用户匹配成功，进行更新操作
-                qwUser = this.sysUserToQwUser(sysUser, qwUserTemp);
+                //update-begin---author:sjlei ---date:2026-04-17  for：【#9496】全量同步N+1查询性能优化-----------
+                qwUser = this.sysUserToQwUser(sysUser, qwUserTemp, userDepartIdsMap, departMap, positionMap);
+                //update-end---author:sjlei ---date:2026-04-17  for：【#9496】全量同步N+1查询性能优化-----------
                 int errCode = JwUserAPI.updateUser(qwUser, accessToken);
                 // 收集错误信息
                 this.syncUserCollectErrInfo(errCode, sysUser, syncInfo);
@@ -397,7 +432,9 @@ public class ThirdAppWechatEnterpriseServiceImpl implements IThirdAppService {
                 continue for1;
             }
             // 循环到此说明是新用户，直接调接口创建
-            qwUser = this.sysUserToQwUser(sysUser);
+            //update-begin---author:sjlei ---date:2026-04-17  for：【#9496】全量同步N+1查询性能优化-----------
+            qwUser = this.sysUserToQwUser(sysUser, userDepartIdsMap, departMap, positionMap);
+            //update-end---author:sjlei ---date:2026-04-17  for：【#9496】全量同步N+1查询性能优化-----------
             int errCode = JwUserAPI.createUser(qwUser, accessToken);
             // 收集错误信息
             boolean apiSuccess = this.syncUserCollectErrInfo(errCode, sysUser, syncInfo);
@@ -559,6 +596,79 @@ public class ThirdAppWechatEnterpriseServiceImpl implements IThirdAppService {
         return this.sysUserToQwUser(sysUser, user);
     }
 
+    //update-begin---author:sjlei ---date:2026-04-17  for：【#9496】全量同步N+1查询性能优化-----------
+    /**
+     * 【同步用户】将SysUser转为企业微信的User对象（创建新用户，使用批量预加载Map）
+     */
+    private User sysUserToQwUser(SysUser sysUser, Map<String, List<String>> userDepartIdsMap,
+                                 Map<String, SysDepart> departMap, Map<String, List<SysPositionVO>> positionMap) {
+        User user = new User();
+        user.setUserid(sysUser.getUsername());
+        return this.sysUserToQwUser(sysUser, user, userDepartIdsMap, departMap, positionMap);
+    }
+
+    /**
+     * 【同步用户】将SysUser转为企业微信的User对象（更新旧用户，使用批量预加载Map）
+     */
+    private User sysUserToQwUser(SysUser sysUser, User user, Map<String, List<String>> userDepartIdsMap,
+                                 Map<String, SysDepart> departMap, Map<String, List<SysPositionVO>> positionMap) {
+        user.setName(sysUser.getRealname());
+        user.setMobile(sysUser.getPhone());
+        // 查询并同步用户部门关系（使用预加载Map替代单次查询）
+        List<SysDepart> departList = this.getUserDepart(sysUser, userDepartIdsMap, departMap);
+        if (departList != null) {
+            List<Integer> departmentIdList = new ArrayList<>();
+            List<Integer> isLeaderInDept = new ArrayList<>();
+            List<String> manageDepartIdList = new ArrayList<>();
+            if (oConvertUtils.isNotEmpty(sysUser.getDepartIds())) {
+                manageDepartIdList = Arrays.asList(sysUser.getDepartIds().split(","));
+            }
+            for (SysDepart sysDepart : departList) {
+                if (oConvertUtils.isNotEmpty(sysDepart.getQywxIdentifier())) {
+                    try {
+                        departmentIdList.add(Integer.parseInt(sysDepart.getQywxIdentifier()));
+                    } catch (NumberFormatException ignored) {
+                        continue;
+                    }
+                    if (CommonConstant.USER_IDENTITY_2.equals(sysUser.getUserIdentity())) {
+                        isLeaderInDept.add(manageDepartIdList.contains(sysDepart.getId()) ? 1 : 0);
+                    } else {
+                        isLeaderInDept.add(0);
+                    }
+                }
+            }
+            user.setDepartment(departmentIdList.toArray(new Integer[]{}));
+            user.setIs_leader_in_dept(isLeaderInDept.toArray(new Integer[]{}));
+        }
+        if (user.getDepartment() == null || user.getDepartment().length == 0) {
+            user.setDepartment(new Integer[]{1});
+            user.setIs_leader_in_dept(new Integer[]{0});
+        }
+        // 职务翻译（使用预加载Map替代单次查询）
+        List<SysPositionVO> positionList = positionMap.getOrDefault(sysUser.getId(), Collections.emptyList());
+        if (!positionList.isEmpty()) {
+            String positionName = positionList.stream().map(SysPositionVO::getName).collect(Collectors.joining(SymbolConstant.COMMA));
+            user.setPosition(positionName);
+        }
+        if (sysUser.getSex() != null) {
+            user.setGender(sysUser.getSex().toString());
+        }
+        user.setEmail(sysUser.getEmail());
+        if (sysUser.getStatus() != null) {
+            if (CommonConstant.USER_UNFREEZE.equals(sysUser.getStatus()) || CommonConstant.USER_FREEZE.equals(sysUser.getStatus())) {
+                user.setEnable(sysUser.getStatus() == 1 ? 1 : 0);
+            } else {
+                user.setEnable(1);
+            }
+        }
+        user.setTelephone(sysUser.getTelephone());
+        if (CommonConstant.DEL_FLAG_1.equals(sysUser.getDelFlag())) {
+            user.setEnable(0);
+        }
+        return user;
+    }
+    //update-end---author:sjlei ---date:2026-04-17  for：【#9496】全量同步N+1查询性能优化-----------
+
     /**
      * 【同步用户】将SysUser转为企业微信的User对象（更新旧用户）
      */
@@ -603,13 +713,12 @@ public class ThirdAppWechatEnterpriseServiceImpl implements IThirdAppService {
             user.setIs_leader_in_dept(new Integer[]{0});
         }
         // 职务翻译
-        //update-begin---author:wangshuai ---date:20230220  for：[QQYUN-3980]组织管理中 职位功能 职位表加租户id 加职位-用户关联表------------
+        // 代码逻辑说明: [QQYUN-3980]组织管理中 职位功能 职位表加租户id 加职位-用户关联表------------
         List<SysPosition> positionList = sysPositionService.getPositionList(sysUser.getId());
         if(null != positionList && positionList.size()>0){
             String positionName = positionList.stream().map(SysPosition::getName).collect(Collectors.joining(SymbolConstant.COMMA));
             user.setPosition(positionName);
         }
-        //update-end---author:wangshuai ---date:20230220  for：[QQYUN-3980]组织管理中 职位功能 职位表加租户id 加职位-用户关联表------------
         if (sysUser.getSex() != null) {
             user.setGender(sysUser.getSex().toString());
         }
@@ -627,11 +736,10 @@ public class ThirdAppWechatEnterpriseServiceImpl implements IThirdAppService {
         // 座机号
         user.setTelephone(sysUser.getTelephone());
         // --- 企业微信没有逻辑删除的功能
-        // update-begin--Author:sunjianlei Date:20210520 for：本地逻辑删除的用户，在企业微信里禁用 -----
+        // 代码逻辑说明: 本地逻辑删除的用户，在企业微信里禁用 -----
         if (CommonConstant.DEL_FLAG_1.equals(sysUser.getDelFlag())) {
             user.setEnable(0);
         }
-        // update-end--Author:sunjianlei Date:20210520 for：本地逻辑删除的用户，在企业微信里冻结 -----
 
         return user;
     }
@@ -654,6 +762,24 @@ public class ThirdAppWechatEnterpriseServiceImpl implements IThirdAppService {
         List<SysDepart> departList = sysDepartService.list(departQueryWrapper);
         return departList.size() == 0 ? null : departList;
     }
+
+    //update-begin---author:sjlei ---date:2026-04-17  for：【#9496】全量同步N+1查询性能优化-----------
+    /**
+     * 查询用户和部门的关系（使用批量预加载Map，消除N+1查询）
+     */
+    private List<SysDepart> getUserDepart(SysUser sysUser, Map<String, List<String>> userDepartIdsMap,
+                                          Map<String, SysDepart> departMap) {
+        List<String> departIds = userDepartIdsMap.get(sysUser.getId());
+        if (departIds == null || departIds.isEmpty()) {
+            return null;
+        }
+        List<SysDepart> departList = departIds.stream()
+                .map(departMap::get)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        return departList.isEmpty() ? null : departList;
+    }
+    //update-end---author:sjlei ---date:2026-04-17  for：【#9496】全量同步N+1查询性能优化-----------
 
     /**
      * 【同步用户】将企业微信的User对象转为SysUser（创建新用户）
@@ -849,7 +975,7 @@ public class ThirdAppWechatEnterpriseServiceImpl implements IThirdAppService {
      * @param verifyConfig 是否验证配置（未启用的APP会拒绝发送）
      * @return
      */
-    public JSONObject sendTextCardMessage(SysAnnouncement announcement, boolean verifyConfig) {
+    public JSONObject sendTextCardMessage(SysAnnouncement announcement,String mobileOpenUrl, boolean verifyConfig) {
         SysThirdAppConfig config = this.getWeChatThirdAppConfig();
         if (verifyConfig && null == config) {
             return null;
@@ -885,9 +1011,29 @@ public class ThirdAppWechatEnterpriseServiceImpl implements IThirdAppService {
         textCard.setTouser(this.getTouser(usernameString, isToAll));
         TextCardEntity entity = new TextCardEntity();
         entity.setTitle(announcement.getTitile());
-        entity.setDescription(oConvertUtils.getString(announcement.getMsgAbstract(),"空"));
-        String baseUrl = null;
+        
+        //update-begin---author:scott ---date:2025-08-05  for：【QQYUN-13257】【h5】催办、抄送消息，在企业微信中显示json乱码---
+        // 判断announcement.getMsgAbstract()值是json格式
+        if(oConvertUtils.isJson(announcement.getMsgAbstract()) && oConvertUtils.isNotEmpty(mobileOpenUrl)){
+            entity.setDescription(announcement.getMsgContent());
+            entity.setUrl(mobileOpenUrl);
+        }else{
+            entity.setDescription(oConvertUtils.getString(announcement.getMsgAbstract(),"空"));
+            entity.setUrl(geQywxtAnnouncementUrl(announcement));
+        }
+        
+        textCard.setTextcard(entity);
+        return JwMessageAPI.sendTextCardMessage(textCard, accessToken);
+    }
 
+    
+    /**
+     * 获取企业微信的公告链接
+     *
+     * @return
+     */
+    private String geQywxtAnnouncementUrl(SysAnnouncement announcement){
+        String baseUrl = null;
         //优先通过请求获取basepath，获取不到读取 jeecg.domainUrl.pc
         try {
             baseUrl = RestUtil.getBaseUrl();
@@ -896,10 +1042,7 @@ public class ThirdAppWechatEnterpriseServiceImpl implements IThirdAppService {
             baseUrl =  jeecgBaseConfig.getDomainUrl().getPc();
             //e.printStackTrace();
         }
-
-        entity.setUrl(baseUrl + "/sys/annountCement/show/" + announcement.getId());
-        textCard.setTextcard(entity);
-        return JwMessageAPI.sendTextCardMessage(textCard, accessToken);
+       return baseUrl + "/sys/annountCement/show/" + announcement.getId();
     }
 
     private String getTouser(String origin, boolean toAll) {
@@ -947,10 +1090,9 @@ public class ThirdAppWechatEnterpriseServiceImpl implements IThirdAppService {
         if(ObjectUtil.isEmpty(count) || 0 == count){
             throw new JeecgBootException("租户不存在！");
         }
-        //update-begin---author:wangshuai ---date:20230224  for：[QQYUN-3440]新建企业微信和钉钉配置表，通过租户模式隔离------------
+        // 代码逻辑说明: [QQYUN-3440]新建企业微信和钉钉配置表，通过租户模式隔离------------
         SysThirdAppConfig config = configMapper.getThirdConfigByThirdType(tenantId, MessageTypeEnum.QYWX.getType());
         String accessToken = this.getAppAccessToken(config);
-        //update-end---author:wangshuai ---date:20230224  for：[QQYUN-3440]新建企业微信和钉钉配置表，通过租户模式隔离------------
         if (accessToken == null) {
             return null;
         }

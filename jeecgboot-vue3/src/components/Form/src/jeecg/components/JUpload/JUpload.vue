@@ -38,6 +38,7 @@
   import { UploadTypeEnum } from './upload.data';
   import { getFileAccessHttpUrl, getHeaders } from '/@/utils/common/compUtils';
   import UploadItemActions from './components/UploadItemActions.vue';
+  import { split } from '/@/utils/index';
 
   const { createMessage, createConfirm } = useMessage();
   const { prefixCls } = useDesign('j-upload');
@@ -96,19 +97,17 @@
   });
   // 合并 props 和 attrs
   const bindProps = computed(() => {
-    //update-begin-author:liusq date:20220411 for: [issue/455]上传组件传入accept限制上传文件类型无效
+    // 代码逻辑说明: [issue/455]上传组件传入accept限制上传文件类型无效
     const bind: any = Object.assign({}, props, unref(attrs));
-    //update-end-author:liusq date:20220411 for: [issue/455]上传组件传入accept限制上传文件类型无效
 
     bind.name = 'file';
     bind.listType = isImageMode.value ? 'picture-card' : 'text';
     bind.class = [bind.class, { 'upload-disabled': props.disabled }];
     bind.data = { biz: props.bizPath, ...bind.data };
-    //update-begin-author:taoyan date:20220407 for: 自定义beforeUpload return false，并不能中断上传过程
+    // 代码逻辑说明: 自定义beforeUpload return false，并不能中断上传过程
     if (!bind.beforeUpload) {
       bind.beforeUpload = onBeforeUpload;
     }
-    //update-end-author:taoyan date:20220407 for: 自定义beforeUpload return false，并不能中断上传过程
     // 如果当前是图片上传模式，就只能上传图片
     if (isImageMode.value && !bind.accept) {
       bind.accept = 'image/*';
@@ -126,13 +125,12 @@
           parseArrayValue(val);
         }
       } else {
-        //update-begin---author:liusq ---date:20230914  for：[issues/5327]Upload组件returnUrl为false时上传的字段值返回了一个'[object Object]' ------------
+        // 代码逻辑说明: [issues/5327]Upload组件returnUrl为false时上传的字段值返回了一个'[object Object]' ------------
         if (props.returnUrl) {
           parsePathsValue(val);
         } else {
           val && parseArrayValue(JSON.parse(val));
         }
-        //update-end---author:liusq ---date:20230914  for：[issues/5327]Upload组件returnUrl为false时上传的字段值返回了一个'[object Object]' ------------
       }
     },
     { immediate: true }
@@ -201,7 +199,9 @@
       return;
     }
     let list: any[] = [];
-    for (const item of paths.split(',')) {
+    // 代码逻辑说明: 【issues/7990】图片参数中包含逗号会错误的识别成多张图
+    const result = split(paths);
+    for (const item of result) {
       let url = getFileAccessHttpUrl(item);
       list.push({
         uid: uidGenerator(),
@@ -305,7 +305,8 @@
     } else if (info.file.status === 'error') {
       createMessage.error(`${info.file.name} 上传失败.`);
     }
-    fileList.value = fileListTemp;
+    // beforeUpload 返回false，则没有status
+    info.file.status && (fileList.value = fileListTemp);
     if (info.file.status === 'done' || info.file.status === 'removed') {
       //returnUrl为true时仅返回文件路径
       if (props.returnUrl) {
@@ -325,9 +326,8 @@
             return;
           }
         }
-        //update-begin---author:liusq ---date:20230914  for：[issues/5327]Upload组件returnUrl为false时上传的字段值返回了一个'[object Object]' ------------
+        // 代码逻辑说明: [issues/5327]Upload组件returnUrl为false时上传的字段值返回了一个'[object Object]' ------------
         emitValue(JSON.stringify(newFileList));
-        //update-end---author:liusq ---date:20230914  for：[issues/5327]Upload组件returnUrl为false时上传的字段值返回了一个'[object Object]' ------------
       }
     }
   }

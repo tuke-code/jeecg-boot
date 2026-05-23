@@ -2,10 +2,8 @@ package org.jeecg.common.aspect;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
-import com.alibaba.fastjson.parser.Feature;
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -23,7 +21,11 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.beans.PropertyDescriptor;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -43,9 +45,6 @@ public class DictAspect {
     private CommonAPI commonApi;
     @Autowired
     public RedisTemplate redisTemplate;
-
-    @Autowired
-    private ObjectMapper objectMapper;
 
     private static final String JAVA_UTIL_DATE = "java.util.Date";
 
@@ -105,37 +104,37 @@ public class DictAspect {
                 Map<String, List<String>> dataListMap = new HashMap<>(5);
                 //取出结果集
                 List<Object> records=((IPage) ((Result) result).getResult()).getRecords();
-                //update-begin--Author:zyf -- Date:20220606 ----for：【VUEN-1230】 判断是否含有字典注解,没有注解返回-----
+                // 代码逻辑说明: 【VUEN-1230】 判断是否含有字典注解,没有注解返回-----
                 Boolean hasDict= checkHasDict(records);
                 if(!hasDict){
                     return result;
                 }
 
                 log.debug(" __ 进入字典翻译切面 DictAspect —— " );
-                //update-end--Author:zyf -- Date:20220606 ----for：【VUEN-1230】 判断是否含有字典注解,没有注解返回-----
                 for (Object record : records) {
-                    String json="{}";
-                    try {
-                        //update-begin--Author:zyf -- Date:20220531 ----for：【issues/#3629】 DictAspect Jackson序列化报错-----
-                        //解决@JsonFormat注解解析不了的问题详见SysAnnouncement类的@JsonFormat
-                         json = objectMapper.writeValueAsString(record);
-                        //update-end--Author:zyf -- Date:20220531 ----for：【issues/#3629】 DictAspect Jackson序列化报错-----
-                    } catch (JsonProcessingException e) {
-                        log.error("json解析失败"+e.getMessage(),e);
-                    }
-                    //update-begin--Author:scott -- Date:20211223 ----for：【issues/3303】restcontroller返回json数据后key顺序错乱 -----
-                    JSONObject item = JSONObject.parseObject(json, Feature.OrderedField);
-                    //update-end--Author:scott -- Date:20211223 ----for：【issues/3303】restcontroller返回json数据后key顺序错乱 -----
-
-                    //update-begin--Author:scott -- Date:20190603 ----for：解决继承实体字段无法翻译问题------
-                    //for (Field field : record.getClass().getDeclaredFields()) {
-                    // 遍历所有字段，把字典Code取出来，放到 map 里
+                    //update-begin---author:scott ---date:2026-04-15  for：【issues/9543】改用反射直接读取字段构建 JSONObject，避免 ObjectMapper 对循环引用实体进行全量序列化导致 OOM；合并字典字段收集逻辑为同一次循环，避免对 getAllFields 遍历两遍；保留 【issues/#3629】@JsonFormat 的 Date 格式化兼容；保留 【issues/3303】字段顺序（LinkedHashMap）-----------
+                    JSONObject item = new JSONObject(true);
                     for (Field field : oConvertUtils.getAllFields(record)) {
+                        if (Modifier.isStatic(field.getModifiers())) {
+                            continue;
+                        }
+                        //update-begin---author:scott ---date:2026-04-16  for：【issues/9543】优先通过 getter 方法读取字段值（兼容实体重写 getter 的场景），getter 不存在时 fallback 到直接读字段-----------
+                        Object fieldValue = getFieldValue(record, field);
+                        //update-end---author:scott ---date:2026-04-16  for：【issues/9543】优先通过 getter 方法读取字段值（兼容实体重写 getter 的场景），getter 不存在时 fallback 到直接读字段-----------
+                        // 解决@JsonFormat注解解析不了的问题详见SysAnnouncement类的@JsonFormat
+                        if (fieldValue instanceof Date) {
+                            JsonFormat jsonFormat = field.getAnnotation(JsonFormat.class);
+                            if (jsonFormat != null && oConvertUtils.isNotEmpty(jsonFormat.pattern())) {
+                                fieldValue = new SimpleDateFormat(jsonFormat.pattern()).format((Date) fieldValue);
+                            }
+                        }
+                        item.put(field.getName(), fieldValue);
+
+                        // 遍历所有字段，把字典Code取出来，放到 map 里
                         String value = item.getString(field.getName());
                         if (oConvertUtils.isEmpty(value)) {
                             continue;
                         }
-                    //update-end--Author:scott  -- Date:20190603 ----for：解决继承实体字段无法翻译问题------
                         if (field.getAnnotation(Dict.class) != null) {
                             if (!dictFieldList.contains(field)) {
                                 dictFieldList.add(field);
@@ -143,27 +142,24 @@ public class DictAspect {
                             String code = field.getAnnotation(Dict.class).dicCode();
                             String text = field.getAnnotation(Dict.class).dicText();
                             String table = field.getAnnotation(Dict.class).dictTable();
-                            //update-begin---author:chenrui ---date:20231221  for：[issues/#5643]解决分布式下表字典跨库无法查询问题------------
+                            // 代码逻辑说明: [issues/#5643]解决分布式下表字典跨库无法查询问题------------
                             String dataSource = field.getAnnotation(Dict.class).ds();
-                            //update-end---author:chenrui ---date:20231221  for：[issues/#5643]解决分布式下表字典跨库无法查询问题------------
                             List<String> dataList;
                             String dictCode = code;
                             if (!StringUtils.isEmpty(table)) {
-                                //update-begin---author:chenrui ---date:20231221  for：[issues/#5643]解决分布式下表字典跨库无法查询问题------------
+                                // 代码逻辑说明: [issues/#5643]解决分布式下表字典跨库无法查询问题------------
                                 dictCode = String.format("%s,%s,%s,%s", table, text, code, dataSource);
-                                //update-end---author:chenrui ---date:20231221  for：[issues/#5643]解决分布式下表字典跨库无法查询问题------------
                             }
                             dataList = dataListMap.computeIfAbsent(dictCode, k -> new ArrayList<>());
                             this.listAddAllDeduplicate(dataList, Arrays.asList(value.split(",")));
                         }
                         //date类型默认转换string格式化日期
-                        //update-begin--Author:zyf -- Date:20220531 ----for：【issues/#3629】 DictAspect Jackson序列化报错-----
                         //if (JAVA_UTIL_DATE.equals(field.getType().getName())&&field.getAnnotation(JsonFormat.class)==null&&item.get(field.getName())!=null){
                             //SimpleDateFormat aDate=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
                             // item.put(field.getName(), aDate.format(new Date((Long) item.get(field.getName()))));
                         //}
-                        //update-end--Author:zyf -- Date:20220531 ----for：【issues/#3629】 DictAspect Jackson序列化报错-----
                     }
+                    //update-end---author:scott ---date:2026-04-15  for：【issues/9543】改用反射直接读取字段构建 JSONObject，避免 ObjectMapper 对循环引用实体进行全量序列化导致 OOM；合并字典字段收集逻辑为同一次循环，避免对 getAllFields 遍历两遍；保留 【issues/#3629】@JsonFormat 的 Date 格式化兼容；保留 【issues/3303】字段顺序（LinkedHashMap）-----------
                     items.add(item);
                 }
 
@@ -176,15 +172,12 @@ public class DictAspect {
                         String code = field.getAnnotation(Dict.class).dicCode();
                         String text = field.getAnnotation(Dict.class).dicText();
                         String table = field.getAnnotation(Dict.class).dictTable();
-                        //update-begin---author:chenrui ---date:20231221  for：[issues/#5643]解决分布式下表字典跨库无法查询问题------------
                         // 自定义的字典表数据源
                         String dataSource = field.getAnnotation(Dict.class).ds();
-                        //update-end---author:chenrui ---date:20231221  for：[issues/#5643]解决分布式下表字典跨库无法查询问题------------
                         String fieldDictCode = code;
                         if (!StringUtils.isEmpty(table)) {
-                            //update-begin---author:chenrui ---date:20231221  for：[issues/#5643]解决分布式下表字典跨库无法查询问题------------
+                            // 代码逻辑说明: [issues/#5643]解决分布式下表字典跨库无法查询问题------------
                             fieldDictCode = String.format("%s,%s,%s,%s", table, text, code, dataSource);
-                            //update-end---author:chenrui ---date:20231221  for：[issues/#5643]解决分布式下表字典跨库无法查询问题------------
                         }
 
                         String value = record.getString(field.getName());
@@ -286,25 +279,20 @@ public class DictAspect {
                 String[] arr = dictCode.split(",");
                 String table = arr[0], text = arr[1], code = arr[2];
                 String values = String.join(",", needTranslDataTable);
-                //update-begin---author:chenrui ---date:20231221  for：[issues/#5643]解决分布式下表字典跨库无法查询问题------------
                 // 自定义的数据源
                 String dataSource = null;
                 if (arr.length > 3) {
                     dataSource = arr[3];
                 }
-                //update-end---author:chenrui ---date:20231221  for：[issues/#5643]解决分布式下表字典跨库无法查询问题------------
                 log.debug("translateDictFromTableByKeys.dictCode:" + dictCode);
                 log.debug("translateDictFromTableByKeys.values:" + values);
-                //update-begin---author:chenrui ---date:20231221  for：[issues/#5643]解决分布式下表字典跨库无法查询问题------------
                 
-                //update-begin---author:wangshuai---date:2024-01-09---for:微服务下为空报错没有参数需要传递空字符串---
+                // 代码逻辑说明: 微服务下为空报错没有参数需要传递空字符串---
                 if(null == dataSource){
                     dataSource = "";
                 }
-                //update-end---author:wangshuai---date:2024-01-09---for:微服务下为空报错没有参数需要传递空字符串---
                 
                 List<DictModel> texts = commonApi.translateDictFromTableByKeys(table, text, code, values, dataSource);
-                //update-end---author:chenrui ---date:20231221  for：[issues/#5643]解决分布式下表字典跨库无法查询问题------------
                 log.debug("translateDictFromTableByKeys.result:" + texts);
                 List<DictModel> list = translText.computeIfAbsent(dictCode, k -> new ArrayList<>());
                 list.addAll(texts);
@@ -313,10 +301,8 @@ public class DictAspect {
                 for (DictModel dict : texts) {
                     String redisKey = String.format("sys:cache:dictTable::SimpleKey [%s,%s]", dictCode, dict.getValue());
                     try {
-                        // update-begin-author:taoyan date:20211012 for: 字典表翻译注解缓存未更新 issues/3061
                         // 保留5分钟
                         redisTemplate.opsForValue().set(redisKey, dict.getText(), 300, TimeUnit.SECONDS);
-                        // update-end-author:taoyan date:20211012 for: 字典表翻译注解缓存未更新 issues/3061
                     } catch (Exception e) {
                         log.warn(e.getMessage(), e);
                     }
@@ -400,7 +386,7 @@ public class DictAspect {
             if (k.trim().length() == 0) {
                 continue; //跳过循环
             }
-            //update-begin--Author:scott -- Date:20210531 ----for： !56 优化微服务应用下存在表字段需要字典翻译时加载缓慢问题-----
+            // 代码逻辑说明: !56 优化微服务应用下存在表字段需要字典翻译时加载缓慢问题-----
             if (!StringUtils.isEmpty(table)){
                 log.debug("--DictAspect------dicTable="+ table+" ,dicText= "+text+" ,dicCode="+code);
                 String keyString = String.format("sys:cache:dictTable::SimpleKey [%s,%s,%s,%s]",table,text,code,k.trim());
@@ -425,7 +411,6 @@ public class DictAspect {
                     tmpValue = commonApi.translateDict(code, k.trim());
                 }
             }
-            //update-end--Author:scott -- Date:20210531 ----for： !56 优化微服务应用下存在表字段需要字典翻译时加载缓慢问题-----
 
             if (tmpValue != null) {
                 if (!"".equals(textValue.toString())) {
@@ -437,6 +422,30 @@ public class DictAspect {
         }
         return textValue.toString();
     }
+
+    //update-begin---author:scott ---date:2026-04-16  for：【issues/9543】优先通过 getter 方法读取字段值（兼容实体重写 getter 的场景），getter 不存在时 fallback 到直接读字段-----------
+    /**
+     * 优先通过 PropertyDescriptor 获取 getter 方法读取字段值，兼容实体重写 getter 的场景；
+     * getter 不存在或调用异常时 fallback 到直接反射读字段。
+     */
+    private Object getFieldValue(Object record, Field field) {
+        try {
+            PropertyDescriptor pd = new PropertyDescriptor(field.getName(), record.getClass());
+            Method readMethod = pd.getReadMethod();
+            if (readMethod != null) {
+                return readMethod.invoke(record);
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            field.setAccessible(true);
+            return field.get(record);
+        } catch (IllegalAccessException e) {
+            log.error("反射读取字段失败: " + field.getName(), e);
+            return null;
+        }
+    }
+    //update-end---author:scott ---date:2026-04-16  for：【issues/9543】优先通过 getter 方法读取字段值（兼容实体重写 getter 的场景），getter 不存在时 fallback 到直接读字段-----------
 
     /**
      * 检测返回结果集中是否包含Dict注解

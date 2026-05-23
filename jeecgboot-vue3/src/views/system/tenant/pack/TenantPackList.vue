@@ -11,6 +11,13 @@
           style="margin-right: 5px"
           >批量删除
         </a-button>
+        <a-button
+          preIcon="ant-design:sync-outlined"
+          type="primary"
+          @click="handleSyncDefaultPack"
+          style="margin-right: 5px"
+          >初始化默认套餐
+        </a-button>
       </template>
       <template #action="{ record }">
         <TableAction :actions="getActions(record)" :dropDownActions="getDropDownAction(record)" />
@@ -19,21 +26,26 @@
   </BasicModal>
   <TenantPackMenuModal @register="registerPackMenu" @success="success" />
   <TenantPackUserModal @register="registerPackUser" @success="success" />
+  <PackPermissionDrawer @register="registerPackPermDrawer" @success="success"/>
 </template>
 <script lang="ts" setup name="tenant-pack-modal">
   import { reactive, ref, unref } from 'vue';
   import { BasicModal, useModal, useModalInner } from '/@/components/Modal';
   import { packColumns, userColumns, packFormSchema } from '../tenant.data';
-  import { getTenantUserList, leaveTenant, packList, deleteTenantPack } from '../tenant.api';
+  import { getTenantUserList, leaveTenant, packList, deleteTenantPack, syncDefaultTenantPack } from '../tenant.api';
   import { useListPage } from '/@/hooks/system/useListPage';
   import { BasicTable, TableAction } from '/@/components/Table';
   import TenantPackMenuModal from './TenantPackMenuModal.vue';
   import {Modal} from "ant-design-vue";
   import TenantPackUserModal from './TenantPackUserModal.vue';
   import {useMessage} from "/@/hooks/web/useMessage";
+  import PackPermissionDrawer from "@/views/system/tenant/pack/PackPermissionDrawer.vue";
+  import { useDrawer } from "@/components/Drawer";
 
   const [registerPackMenu, { openModal }] = useModal();
   const [registerPackUser, { openModal: packUserOpenModal }] = useModal();
+  const [registerPackPermDrawer, { openDrawer: openPackPermDrawer }] = useDrawer();
+  
   const tenantId = ref<number>(0);
   // 列表页面公共参数、方法
   const { prefixCls, tableContext } = useListPage({
@@ -64,7 +76,7 @@
   const [registerTable, { reload }, { rowSelection, selectedRowKeys, selectedRows }] = tableContext;
   // Emits声明
   const emit = defineEmits(['register', 'success']);
-  //是否显示新增和编辑产品包
+  //是否显示新增和编辑套餐包
   const showPackAddAndEdit = ref<boolean>(false);
   //表单赋值
   const [registerModal, { setModalProps, closeModal }] = useModalInner(async (data) => {
@@ -73,7 +85,7 @@
     success();
   });
   //设置标题
-  const title = '租户产品包列表';
+  const title = '租户个性化套餐包';
 
   //表单提交事件
   async function handleSubmit(v) {
@@ -87,8 +99,8 @@
         onClick: seeTenantPackUser.bind(null, record),
       },
       {
-        label: '编辑',
-        onClick: handleEdit.bind(null, record),
+        label: '授权',
+        onClick: handleRolePrem.bind(null, record),
         ifShow: ()=>{ return showPackAddAndEdit.value }
       },
     ];
@@ -115,46 +127,66 @@
     });
   }
 
-  //默认系统产品包不允许删除,包含(超级管理员、组织账户管理员、组织应用管理员)
+  //默认系统套餐包不允许删除,包含(超级管理员、组织账户管理员、组织应用管理员)
   const packCode = reactive<any>(['superAdmin','accountAdmin','appAdmin']);
   const { createMessage } = useMessage();
   
   /**
-   * 删除产品包
+   * 删除套餐包
    * @param 删除
    */
   async function handleDelete(record) {
-    //update-begin---author:wangshuai ---date:20230222  for：系统默认产品包不允许删除------------
+    // 代码逻辑说明: 系统默认套餐包不允许删除------------
     if(packCode.indexOf(record.packCode) != -1){
-        createMessage.warning("默认系统产品包不允许删除");
+        createMessage.warning("默认系统套餐包不允许删除");
        return;
     }
-    //update-end---author:wangshuai ---date:20230222  for：系统默认产品包不允许删除------------
+    if(record.packCode && record.packCode.indexOf("default") != -1){
+      createMessage.warning("默认套餐包不允许删除");
+      return;
+    }
     await deleteTenantPack({ ids: record.id }, success);
   }
 
   /**
-   * 批量删除产品包
+   * 批量删除套餐包
    */
   async function handlePackBatch() {
     let value = selectedRows.value;
     if(value && value.length>0){
       for (let i = 0; i < value.length; i++) {
         if(packCode.indexOf(value[i].packCode) != -1){
-          createMessage.warning("默认系统产品包不允许删除");
+          createMessage.warning("默认系统套餐包不允许删除");
+          return;
+        }
+        // 代码逻辑说明: 默认套餐不允许删除---
+        if(value[i].packCode && value[i].packCode.indexOf("default") != -1){
+          createMessage.warning("默认套餐包不允许删除");
           return;
         }
       }
     }
     Modal.confirm({
-      title: '删除租户产品包',
-      content: '是否删除租户产品包',
+      title: '删除租户套餐包',
+      content: '是否删除租户套餐包',
       okText: '确认',
       cancelText: '取消',
       onOk: async () => {
         await deleteTenantPack({ ids: selectedRowKeys.value.join(',')}, success);
       }
     })
+  }
+
+  async function handleSyncDefaultPack() {
+    Modal.confirm({
+      title: '初始化默认套餐包',
+      content: '是否初始化默认套餐包',
+      okText: '确认',
+      cancelText: '取消',
+      onOk: async () => {
+        await syncDefaultTenantPack({tenantId: unref(tenantId)}, success);
+      },
+    });
   }
 
   /**
@@ -171,7 +203,7 @@
   }
 
   /**
-   * 产品包下面的用户
+   * 套餐包下面的用户
    * @param record
    */
   function seeTenantPackUser(record) {
@@ -187,13 +219,18 @@
   function getDropDownAction(record) {
     return [
       {
+        label: '编辑',
+        onClick: handleEdit.bind(null, record),
+        ifShow: ()=>{ return showPackAddAndEdit.value }
+      },
+      {
         label: '详情',
         onClick: handleDetail.bind(null, record),
       },
       {
         label: '删除',
         popConfirm: {
-          title: '是否确认删除租户产品包',
+          title: '是否确认删除租户套餐包',
           confirm: handleDelete.bind(null, record),
         },
       },
@@ -212,5 +249,18 @@
       packType:'custom',
       showFooter: false
     });
+  }
+
+
+  /**
+   * 授权
+   *
+   * @param record
+   */
+  function handleRolePrem(record) {
+    openPackPermDrawer(true,{
+      packId: record.id,
+      permissionIds: record.permissionIds
+    })
   }
 </script>

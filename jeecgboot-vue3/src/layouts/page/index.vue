@@ -15,9 +15,13 @@
       <!--        appear-->
       <!--      >-->
       <keep-alive v-if="openCache" :include="getCaches">
-        <component :is="Component" :key="route.fullPath" />
+        <template v-if="Component">
+          <component :is="Component" :key="route.fullPath"/>
+        </template>
+        <EmptyPage v-else/>
       </keep-alive>
-      <component v-else :is="Component" :key="route.fullPath" />
+      <component v-else-if="Component" :is="Component" :key="route.fullPath"/>
+      <EmptyPage v-else/>
       <!--      </transition>-->
     </template>
   </RouterView>
@@ -28,6 +32,7 @@
   import { computed, defineComponent, unref } from 'vue';
 
   import FrameLayout from '/@/layouts/iframe/index.vue';
+  import EmptyPage from './components/EmptyPage.vue';
 
   import { useRootSetting } from '/@/hooks/setting/useRootSetting';
 
@@ -39,7 +44,7 @@
 
   export default defineComponent({
     name: 'PageLayout',
-    components: { FrameLayout },
+    components: { FrameLayout, EmptyPage },
     setup() {
       const { getShowMultipleTab } = useMultipleTabSetting();
       const tabStore = useMultipleTabStore();
@@ -56,7 +61,6 @@
         }
         return tabStore.getCachedTabList;
       });
-
       return {
         getTransitionName,
         openCache,

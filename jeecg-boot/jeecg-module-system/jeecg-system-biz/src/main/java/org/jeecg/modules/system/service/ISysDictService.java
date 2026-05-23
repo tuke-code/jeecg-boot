@@ -107,7 +107,6 @@ public interface ISysDictService extends IService<SysDict> {
     @Deprecated
 	String queryTableDictTextByKey(String table, String text, String code, String key);
 
-	//update-begin---author:chenrui ---date:20231221  for：[issues/#5643]解决分布式下表字典跨库无法查询问题------------
 	/**
 	 * 通过查询指定table的 text code key 获取字典值，可批量查询
 	 *
@@ -119,7 +118,6 @@ public interface ISysDictService extends IService<SysDict> {
 	 * @return
 	 */
 	List<DictModel> queryTableDictTextByKeys(String table, String text, String code, List<String> keys, String dataSource);
-	//update-end---author:chenrui ---date:20231221  for：[issues/#5643]解决分布式下表字典跨库无法查询问题------------
 
     /**
      * 通过查询指定table的 text code key 获取字典值，包含value
@@ -194,7 +192,7 @@ public interface ISysDictService extends IService<SysDict> {
 	 * @return
 	 */
 	@Deprecated
-	public List<DictModel> queryLittleTableDictItems(String table, String text, String code, String condition, String keyword, int pageSize);
+	public List<DictModel> queryLittleTableDictItems(String table, String text, String code, String condition, String keyword, int pageNo, int pageSize);
 
 	/**
 	 * 查询字典表所有数据
@@ -264,10 +262,11 @@ public interface ISysDictService extends IService<SysDict> {
      *
      * @param dictCode 字典code格式：table,text,code
      * @param keyword
+     * @param pageNo
      * @param pageSize 每页条数
      * @return
      */
-    List<DictModel> loadDict(String dictCode, String keyword, Integer pageSize);
+    List<DictModel> loadDict(String dictCode, String keyword, Integer pageNo, Integer pageSize);
 
 	/**
 	 * 根据应用id获取字典列表和详情
@@ -287,4 +286,16 @@ public interface ISysDictService extends IService<SysDict> {
 	 * @param sysDictVo
 	 */
 	void editDictByLowAppId(SysDictVo sysDictVo);
+
+	/**
+	 * 还原逻辑删除
+	 * @param ids
+	 */
+	boolean revertLogicDeleted(List<String> ids);
+
+	/**
+	 * 彻底删除数据
+	 * @param ids
+	 */
+	boolean removeLogicDeleted(List<String> ids);
 }

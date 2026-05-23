@@ -21,6 +21,24 @@
     <template #JPopup="{ model, field }">
       <JPopup v-model:value="model[field]" :formElRef="formElRef" code="report_user" :fieldConfig="[{ source: 'username', target: 'pop1' }]" />
     </template>
+    <template #JPopup2="{ model, field }">
+      <JPopup
+        v-model:value="model[field]"
+        :formElRef="formElRef"
+        code="withparamreport"
+        :param="{ sex: '1' }"
+        :fieldConfig="[{ source: 'name', target: 'pop2' }]"
+      />
+    </template>
+    <template #JPopup3="{ model, field }">
+      <JPopup
+        v-model:value="model[field]"
+        :formElRef="formElRef"
+        code="report_user"
+        :param="{ sex: '1' }"
+        :fieldConfig="[{ source: 'realname', target: 'pop3' }]"
+      />
+    </template>
     <template #JAreaSelect="{ model, field }">
       <JAreaSelect v-model:value="model[field]" />
     </template>
@@ -39,6 +57,9 @@
     <template #superQuery1="{ model, field }">
       <super-query :config="superQueryConfig" @search="(value)=>handleSuperQuery(value, model, field)" :isCustomSave="true" :saveSearchData="saveSearchData" :save="handleSuperQuerySave"/>
     </template>
+    <template #tabsSelectUser="{ model, field }">
+      <JTabsSelectUser v-model:value="model[field]" ></JTabsSelectUser>
+    </template>
   </BasicForm>
 </template>
 <script lang="ts">
@@ -50,7 +71,7 @@
   import { schemas } from './jeecgComponents.data';
   import { usePermission } from '/@/hooks/web/usePermission';
   import { BasicDragVerify } from '/@/components/Verify';
-
+  import JTabsSelectUser from '/@/components/jeecg/JTabsSelectUser/index.vue';
   export default defineComponent({
     components: {
       BasicForm,
@@ -61,6 +82,7 @@
       JCheckbox,
       JInput,
       JEllipsis,
+      JTabsSelectUser,
       BasicDragVerify,
     },
     name: 'JeecgComponents',

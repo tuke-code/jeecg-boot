@@ -12,10 +12,12 @@ import org.springframework.web.bind.annotation.InitBinder;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.servlet.ModelAndView;
+import org.springframework.web.servlet.view.RedirectView;
 
-import javax.annotation.Resource;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Map;
@@ -51,11 +53,12 @@ public class IndexController {
 	
 	@RequestMapping("/toLogin")
 	@PermissionLimit(limit=false)
-	public String toLogin(HttpServletRequest request, HttpServletResponse response) {
+	public ModelAndView toLogin(HttpServletRequest request, HttpServletResponse response,ModelAndView modelAndView) {
 		if (loginService.ifLogin(request, response) != null) {
-			return "redirect:/";
+			modelAndView.setView(new RedirectView("/",true,false));
+			return modelAndView;
 		}
-		return "login";
+		return new ModelAndView("login");
 	}
 	
 	@RequestMapping(value="login", method=RequestMethod.POST)

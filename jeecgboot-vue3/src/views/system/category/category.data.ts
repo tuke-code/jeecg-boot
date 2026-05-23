@@ -18,13 +18,13 @@ export const searchFormSchema: FormSchema[] = [
   {
     label: '名称',
     field: 'name',
-    component: 'Input',
+    component: 'JInput',
     colProps: { span: 6 },
   },
   {
     label: '编码',
     field: 'code',
-    component: 'Input',
+    component: 'JInput',
     colProps: { span: 6 },
   },
 ];
@@ -41,9 +41,8 @@ export const formSchema: FormSchema[] = [
     field: 'pid',
     component: 'TreeSelect',
     componentProps: {
-      //update-begin---author:wangshuai ---date:20230829  for：replaceFields已过期，使用fieldNames代替------------
+      // 代码逻辑说明: replaceFields已过期，使用fieldNames代替------------
       fieldNames: {
-      //update-end---author:wangshuai ---date:20230829  for：replaceFields已过期，使用fieldNames代替------------
         value: 'key',
       },
       dropdownStyle: {

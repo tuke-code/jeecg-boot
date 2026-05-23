@@ -1,9 +1,9 @@
 import { generate } from '@ant-design/colors';
-
-export const primaryColor = '#1890FF';
-
-export const darkMode = 'light';
-
+import setting from '/@/settings/projectSetting';
+// 构建期默认主题色（与 src/settings 中默认 MIX 菜单模式 APP_PRESET_COLOR_LIST[2] 保持一致）
+// 运行时会从 store 拿真实值并显式传入，这里只做 build 阶段的占位与默认色板生成
+export const primaryColor = setting.themeColor;
+export const darkMode = setting.themeMode;
 type Fn = (...arg: any) => any;
 
 type GenerateTheme = 'default' | 'dark';

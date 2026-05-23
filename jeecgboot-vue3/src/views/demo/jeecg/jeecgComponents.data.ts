@@ -1,4 +1,5 @@
-import { FormSchema, JCronValidator } from '/@/components/Form';
+import { FormSchema } from '/@/components/Form';
+import JCronValidator from '/@/components/Form/src/jeecg/components/JEasyCron/validator';
 import { usePermission } from '/@/hooks/web/usePermission';
 
 const { isDisabledAuth } = usePermission();
@@ -220,6 +221,22 @@ export const schemas: FormSchema[] = [
     colProps: { span: 12 },
   },
   {
+    field: 'depart4',
+    component: 'JSelectDepartPost',
+    label: '选择岗位',
+    helpMessage: ['component模式'],
+    componentProps: { showButton: false },
+    colProps: {
+      span: 12,
+    },
+  },
+  {
+    field: 'depart4',
+    component: 'JEllipsis',
+    label: '选择岗位',
+    colProps: { span: 12 },
+  },
+  {
     field: 'user2',
     component: 'JSelectUser',
     label: '用户选择组件',
@@ -254,6 +271,45 @@ export const schemas: FormSchema[] = [
   },
   {
     field: 'user3',
+    component: 'JEllipsis',
+    label: '选中用户',
+    colProps: { span: 12 },
+  },
+  {
+    field: 'userPost1',
+    component: 'JSelectUserByDeptPost',
+    label: '部门岗位选择用户',
+    helpMessage: ['component模式'],
+    componentProps: {
+      labelKey: 'realname',
+      rowKey: 'username',
+    },
+    colProps: {
+      span: 12,
+    },
+  },
+  {
+    field: 'userPost1',
+    component: 'JEllipsis',
+    label: '选中用户',
+    colProps: { span: 12 },
+  },
+  {
+    field: 'user4',
+    component: 'JSelectUserByDepartment',
+    label: '部门选择用户',
+    helpMessage: ['component模式'],
+    defaultValue: '',
+    componentProps: {
+      labelKey: 'realname',
+      rowKey: 'username',
+    },
+    colProps: {
+      span: 12,
+    },
+  },
+  {
+    field: 'user4',
     component: 'JEllipsis',
     label: '选中用户',
     colProps: { span: 12 },
@@ -607,6 +663,42 @@ export const schemas: FormSchema[] = [
     },
   },
   {
+    field: 'pop2',
+    component: 'Input',
+    label: 'JPopup带参数示例',
+    helpMessage: ['插槽模式'],
+    slot: 'JPopup2',
+    colProps: {
+      span: 12,
+    },
+  },
+  {
+    field: 'pop2',
+    component: 'JEllipsis',
+    label: '选中值',
+    colProps: {
+      span: 12,
+    },
+  },
+  {
+    field: 'pop3',
+    component: 'Input',
+    label: 'JPopup带查询条件参数示例',
+    helpMessage: ['插槽模式'],
+    slot: 'JPopup3',
+    colProps: {
+      span: 12,
+    },
+  },
+  {
+    field: 'pop3',
+    component: 'JEllipsis',
+    label: '选中值',
+    colProps: {
+      span: 12,
+    },
+  },
+  {
     field: 'JInputPop',
     component: 'JInputPop',
     label: 'JInputPop',
@@ -788,34 +880,35 @@ export const schemas: FormSchema[] = [
     componentProps: {
       selectPlaceholder: '可选择系统变量',
       inputPlaceholder: '请输入',
+      selectWidth:'200px',
       options: [
         {
           label: '登录用户账号',
-          value: '${sys_user_code}',
+          value: '#{sys_user_code}',
         },
         {
           label: '登录用户名称',
-          value: '${sys_user_name}',
+          value: '#{sys_user_name}',
         },
         {
           label: '当前日期',
-          value: '${sys_date}',
+          value: '#{sys_date}',
         },
         {
           label: '当前时间',
-          value: '${sys_date}',
+          value: '#{sys_time}',
         },
         {
           label: '登录用户部门',
-          value: '${sys_org_code}',
+          value: '#{sys_org_code}',
         },
         {
           label: '用户拥有部门',
-          value: '${sys_multi_org_code}',
+          value: '#{sys_multi_org_code}',
         },
         {
           label: '登录用户租户',
-          value: '${tenant_id}',
+          value: '#{tenant_id}',
         },
       ],
     },
@@ -843,7 +936,20 @@ export const schemas: FormSchema[] = [
     label: '选中值',
     colProps: { span: 12 },
   },
-
+  {
+    field: 'tabsSelectUser',
+    component: 'Input',
+    label: '用户选择',
+    helpMessage: ['插槽模式-自己保存查询条件'],
+    slot: 'tabsSelectUser',
+    colProps: { span: 14 },
+  },
+  {
+    field: 'tabsSelectUser',
+    component: 'JEllipsis',
+    label: '选中值',
+    colProps: { span: 10 },
+  },
   {
     field: 'orderAuth',
     component: 'Input',
@@ -860,5 +966,4 @@ export const schemas: FormSchema[] = [
     label: '选中值',
     colProps: { span: 12 },
   },
-  
 ];

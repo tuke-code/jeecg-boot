@@ -64,12 +64,39 @@ export const searchFormSchema: FormSchema[] = [
     field: 'titile',
     label: '标题',
     component: 'Input',
-    colProps: { span: 8 },
+    colProps: { span: 6 },
   },
   {
     field: 'sender',
     label: '发布人',
     component: 'Input',
-    colProps: { span: 8 },
+    colProps: { span: 6 },
+  },
+  {
+    field: 'sendTime',
+    label: '发布时间',
+    component: 'RangeDate',
+    componentProps: {
+      valueType: 'Date',
+    },
+    colProps: { span: 6 },
+  },
+  {
+    field: 'msgCategory',
+    label: '消息类型',
+    component: 'Select',
+    componentProps: {
+      options: [
+        { label: '通知公告', value: '1' },
+        { label: '系统消息', value: '2' },
+        { label: '日程计划', value: 'plan' },
+        { label: '流程消息', value: 'flow' },
+        { label: '会议', value: 'meeting' },
+        { label: '知识库', value: 'file' },
+        { label: '协同通知', value: 'collab' },
+        { label: '督办通知', value: 'supe' },
+      ],
+    },
+    colProps: { span: 6 },
   },
 ];

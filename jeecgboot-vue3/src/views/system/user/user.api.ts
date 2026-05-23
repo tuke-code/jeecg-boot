@@ -1,13 +1,11 @@
 import { defHttp } from '/@/utils/http/axios';
 import { Modal } from 'ant-design-vue';
-
+import { isObject } from '/@/utils/is';
 enum Api {
   listNoCareTenant = '/sys/user/listAll',
   list = '/sys/user/list',
   save = '/sys/user/add',
   edit = '/sys/user/edit',
-  agentSave = '/sys/sysUserAgent/add',
-  agentEdit = '/sys/sysUserAgent/edit',
   getUserRole = '/sys/user/queryUserRole',
   duplicateCheck = '/sys/duplicate/check',
   deleteUser = '/sys/user/delete',
@@ -28,8 +26,10 @@ enum Api {
   userQuitAgent = '/sys/user/userQuitAgent',
   getQuitList = '/sys/user/getQuitList',
   putCancelQuit = '/sys/user/putCancelQuit',
+  resetPassword = '/sys/user/resetPassword',
   updateUserTenantStatus='/sys/tenant/updateUserTenantStatus',
   getUserTenantPageList='/sys/tenant/getUserTenantPageList',
+  getDepPostIdByDepId = '/sys/sysDepart/getDepPostIdByDepId',
 }
 /**
  * 导出api
@@ -103,11 +103,19 @@ export const duplicateCheck = (params) => defHttp.get({ url: Api.duplicateCheck,
  * 唯一校验（ 延迟【防抖】）
  * @param params
  */
-let timer;
+const timer = {};
 export const duplicateCheckDelay = (params) => {
   return new Promise((resove, rejected) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => {
+    // -update-begin--author:liaozhiyang---date:20240619---for：【TV360X-1380】表单中使用多个duplicateCheckDelay，validate方法调用时会导致promise被挂起保存不了
+    let key;
+    if (isObject(params)) {
+      key = `${params.tableName}_${params.fieldName}`;
+    } else {
+      key = params;
+    }
+    clearTimeout(timer[key]);
+    // -update-end--author:liaozhiyang---date:20240619---for：【TV360X-1380】表单中使用多个duplicateCheckDelay，validate方法调用时会导致promise被挂起保存不了
+    timer[key] = setTimeout(() => {
       defHttp
         .get({ url: Api.duplicateCheck, params }, { isTransformResponse: false })
         .then((res: any) => {
@@ -116,6 +124,7 @@ export const duplicateCheckDelay = (params) => {
         .catch((error) => {
           rejected(error);
         });
+      delete timer[key];
     }, 500);
   });
 };
@@ -187,26 +196,15 @@ export const frozenBatch = (params, handleSuccess) => {
   });
 };
 /**
- * 获取用户代理
+ * 重置密码
  * @param params
  */
-export const getUserAgent = (params) => defHttp.get({ url: Api.getUserAgent, params }, { isTransformResponse: false });
-/**
- * 保存或者更新用户代理
- * @param params
- */
-export const saveOrUpdateAgent = (params) => {
-  let url = params.id ? Api.agentEdit : Api.agentSave;
-  return defHttp.post({ url: url, params });
+export const resetPassword = (params, handleSuccess) => {
+  return defHttp.put({ url: Api.resetPassword, params },{joinParamsToUrl: true}).then(() => {
+    handleSuccess();
+  });
 };
 
-/**
- * 用户离职(新增代理人和用户状态变更操作)
- * @param params
- */
-export const userQuitAgent = (params) => {
-  return defHttp.put({ url: Api.userQuitAgent, params });
-};
 
 /**
  * 用户离职列表
@@ -239,4 +237,13 @@ export const getUserTenantPageList = (params) => {
  */
 export const updateUserTenantStatus = (params) => {
   return defHttp.put({ url: Api.updateUserTenantStatus, params }, { joinParamsToUrl: true, isTransformResponse: false });
+};
+
+/**
+ * 根据部门id和已选中的部门岗位id获取部门下的岗位id
+ * 
+ * @param params
+ */
+export const getDepPostIdByDepId = (params) => {
+  return defHttp.get({ url: Api.getDepPostIdByDepId, params },{ isTransformResponse: false });
 };

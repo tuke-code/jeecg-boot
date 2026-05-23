@@ -3,7 +3,7 @@
     <div @click="showModal" :class="disabled ? 'select-input disabled-select' : 'select-input'">
       <template v-if="selectedList.length > 0">
         <template v-for="(item, index) in selectedList">
-          <SelectedUserItem v-if="index < maxCount" :info="item" @unSelect="unSelect" query />
+          <SelectedUserItem v-if="index < maxSelectCount" :info="item" @unSelect="unSelect" query />
         </template>
       </template>
       <span v-else style="height: 30px; line-height: 30px; display: inline-block; margin-left: 7px; color: #bfbfbf">请选择</span>
@@ -26,7 +26,7 @@
   import { Form } from 'ant-design-vue';
   import { useUserStore } from '/@/store/modules/user';
 
-  const maxCount = 2;
+  const maxCount = 3;
 
   export default defineComponent({
     name: 'RoleSelectInput',
@@ -38,6 +38,11 @@
       disabled: {
         type: Boolean,
         default: false,
+      },
+      // 代码逻辑说明: 【issues/8078】角色选择组件点击文字部分会一直选中
+      maxSelectCount: {
+        type: Number,
+        default: 2,
       },
       store: {
         type: String,
@@ -77,7 +82,7 @@
       }
 
       const ellipsisInfo = computed(() => {
-        let max = maxCount;
+        let max = props.maxSelectCount;
         let len = selectedList.value.length;
         if (len > max) {
           return { status: true, count: len - max };
@@ -189,6 +194,12 @@
                 selectType: 'sys_role',
               });
             }
+            // 根据 ids 的顺序对 arr 进行排序
+            if (props.store === 'code') {
+              arr.sort((a, b) => ids.indexOf(a.code) - ids.indexOf(b.code));
+            } else {
+              arr.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+            }
           }
           selectedList.value = arr;
         } else {
@@ -199,7 +210,6 @@
       return {
         selectedList,
         ellipsisInfo,
-        maxCount,
         registerRoleModal,
         closeRoleModal,
         showModal,

@@ -112,7 +112,9 @@
 
       //整合warpClassName
       const getWrapClassName = computed(() => {
-        const clsName = toRef(getMergeProps.value, 'wrapClassName').value || '';
+        let clsName = toRef(getMergeProps.value, 'wrapClassName').value || '';
+        // 代码逻辑说明: 【issues/7260】原生a-modal关闭按钮位置偏移
+        clsName = `${clsName} jeecg-modal-code-generate`;
         return unref(fullScreenRef) ? `jeecg-full-screen-modal-code-generate ${clsName} ` : unref(clsName);
       });
 
@@ -324,4 +326,12 @@
     }
   }
   /*end 全屏弹窗modal样式*/
+  // 代码逻辑说明: 【issues/7260】原生a-modal关闭按钮位置偏移
+  .jeecg-modal-code-generate {
+    .ant-modal {
+      .ant-modal-close {
+        top: 8px;
+      }
+    }
+  }
 </style>

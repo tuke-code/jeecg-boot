@@ -8,6 +8,7 @@ import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.DynamicDataSourceModel;
 import org.jeecg.common.util.ReflectHelper;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.common.util.security.JdbcSecurityUtil;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
@@ -42,7 +43,10 @@ public class DynamicDBUtil {
         if (oConvertUtils.isEmpty(url) || !url.toLowerCase().startsWith("jdbc:")) {
             throw new JeecgBootException("数据源URL配置格式不正确！");
         }
-        
+        // 纵深防御: 连接建立时二次校验 URL 和驱动安全性
+        JdbcSecurityUtil.validate(url);
+        JdbcSecurityUtil.validateDriver(driverClassName);
+
         String dbUser = dbSource.getDbUsername();
         String dbPassword = dbSource.getDbPassword();
         dataSource.setDriverClassName(driverClassName);
@@ -84,6 +88,10 @@ public class DynamicDBUtil {
         } else {
             DruidDataSource dataSource = getJdbcDataSource(dbSource);
             if(dataSource!=null && dataSource.isEnable()){
+
+                // 【TV360X-2060】设置超时时间 6秒
+                dataSource.setMaxWait(6000);
+
                 DataSourceCachePool.putCacheBasicDataSource(dbKey, dataSource);
             }else{
                 throw new JeecgBootException("动态数据源连接失败，dbKey："+dbKey);
@@ -106,9 +114,10 @@ public class DynamicDBUtil {
                 dataSource.getConnection().commit();
                 dataSource.getConnection().close();
                 dataSource.close();
+                DataSourceCachePool.removeCache(dbKey);
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            log.warn(e.getMessage(), e);
         }
     }
 

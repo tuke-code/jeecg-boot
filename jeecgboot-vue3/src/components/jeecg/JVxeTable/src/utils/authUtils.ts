@@ -1,13 +1,12 @@
 /* JVxeTable 行编辑 权限 */
 import { usePermissionStoreWithOut } from '/@/store/modules/permission';
 
-const permissionStore = usePermissionStoreWithOut();
-
 /**
  * JVxe 专用，获取权限
  * @param prefix
  */
 export function getJVxeAuths(prefix) {
+  const permissionStore = usePermissionStoreWithOut();
   prefix = getPrefix(prefix);
   let { authList, allAuthList } = permissionStore;
   let authsMap = new Map<string, typeof allAuthList[0]>();
@@ -27,14 +26,13 @@ export function getJVxeAuths(prefix) {
       getAuth.isAuth = true;
     }
   }
-  //update-begin-author:taoyan date:2022-6-1 for:  VUEN-1162 子表按钮没控制
+  // 代码逻辑说明: VUEN-1162 子表按钮没控制
   let onlineButtonAuths = permissionStore.getOnlineSubTableAuth(prefix);
   if (onlineButtonAuths && onlineButtonAuths.length > 0) {
     for (let auth of onlineButtonAuths) {
       authsMap.set(prefix + 'btn:' + auth, { action: auth, type: 1, status: 1, isAuth: false });
     }
   }
-  //update-end-author:taoyan date:2022-6-1 for:  VUEN-1162 子表按钮没控制
   return authsMap;
 }
 

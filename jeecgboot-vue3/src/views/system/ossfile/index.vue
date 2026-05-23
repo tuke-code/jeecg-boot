@@ -36,6 +36,7 @@
   import { useGlobSetting } from '/@/hooks/setting';
   import { getToken } from '/@/utils/auth';
   import {encryptByBase64} from "@/utils/cipher";
+  import { getFileAccessHttpUrl } from '@/utils/common/compUtils';
 
   const { createMessage } = useMessage();
   const glob = useGlobSetting();
@@ -80,15 +81,15 @@
   function handleView(record) {
     if (record && record.url) {
       console.log('glob.onlineUrl', glob.viewUrl);
-      //update-begin---author:scott ---date:2024-06-03  for：【TV360X-952】升级到kkfileview4.1.0---
       // let filePath = encodeURIComponent(record.url);
-      let url = encodeURIComponent(encryptByBase64(record.url));
+      //update-begin-author:scott---date:2026-04-16--for: 【Github #8855】修复文件预览路径处理问题，url需要先拼接完整URL再编码
+      let url = encodeURIComponent(encryptByBase64(getFileAccessHttpUrl(record.url)));
+      //update-end-author:scott---date:2026-04-16--for: 【Github #8855】修复文件预览路径处理问题，url需要先拼接完整URL再编码
       // //文档采用pdf预览高级模式
       // if(filePath.endsWith(".pdf") || filePath.endsWith(".doc") || filePath.endsWith(".docx")){
       //   filePath = filePath
       // }
       let previewUrl = `${glob.viewUrl}?url=` + url;
-      //update-end---author:scott ---date:2024-06-03  for：【TV360X-952】升级到kkfileview4.1.0---
       
       window.open(previewUrl, '_blank');
     }

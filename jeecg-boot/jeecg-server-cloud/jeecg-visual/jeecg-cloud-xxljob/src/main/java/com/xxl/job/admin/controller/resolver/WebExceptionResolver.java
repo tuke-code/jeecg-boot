@@ -11,8 +11,8 @@ import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 import org.springframework.web.servlet.ModelAndView;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
 /**
@@ -34,10 +34,12 @@ public class WebExceptionResolver implements HandlerExceptionResolver {
 
 		// if json
 		boolean isJson = false;
-		HandlerMethod method = (HandlerMethod)handler;
-		ResponseBody responseBody = method.getMethodAnnotation(ResponseBody.class);
-		if (responseBody != null) {
-			isJson = true;
+		if (handler instanceof HandlerMethod) {
+			HandlerMethod method = (HandlerMethod)handler;
+			ResponseBody responseBody = method.getMethodAnnotation(ResponseBody.class);
+			if (responseBody != null) {
+				isJson = true;
+			}
 		}
 
 		// error result

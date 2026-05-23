@@ -89,7 +89,8 @@
   import { reactive, ref, toRaw, unref, computed, onMounted } from 'vue';
 
   import { Checkbox, Form, Input, Row, Col, Button, Divider } from 'ant-design-vue';
-  import { GithubFilled, WechatFilled, DingtalkCircleFilled, createFromIconfontCN } from '@ant-design/icons-vue';
+  import { GithubFilled, WechatFilled, DingtalkCircleFilled } from '@ant-design/icons-vue';
+  import { IconFont } from '/@/utils/iconfont2';
   import LoginFormTitle from './LoginFormTitle.vue';
   import ThirdModal from './ThirdModal.vue';
   import { useI18n } from '/@/hooks/web/useI18n';
@@ -99,15 +100,12 @@
   import { LoginStateEnum, useLoginState, useFormRules, useFormValid } from './useLogin';
   import { useDesign } from '/@/hooks/web/useDesign';
   import { getCodeInfo } from '/@/api/sys/user';
-  //import { onKeyStroke } from '@vueuse/core';
+  import {  encryptAESCBC } from '/@/utils/cipher';
 
   const ACol = Col;
   const ARow = Row;
   const FormItem = Form.Item;
   const InputPassword = Input.Password;
-  const IconFont = createFromIconfontCN({
-    scriptUrl: '//at.alicdn.com/t/font_2316098_umqusozousr.js',
-  });
   const { t } = useI18n();
   const { notification, createErrorModal } = useMessage();
   const { prefixCls } = useDesign('login');
@@ -143,9 +141,12 @@
     if (!data) return;
     try {
       loading.value = true;
+
+      // 密码使用AES加密传输
+      const encryptedPassword = encryptAESCBC(data.password);
       const { userInfo } = await userStore.login(
         toRaw({
-          password: data.password,
+          password: encryptedPassword,
           username: data.account,
           captcha: data.inputCode,
           checkKey: randCodeData.checkKey,
@@ -166,16 +167,13 @@
         duration: 3,
       });
       loading.value = false;
-
-      //update-begin-author:taoyan date:2022-5-3 for: issues/41 登录页面，当输入验证码错误时，验证码图片要刷新一下，而不是保持旧的验证码图片不变
       handleChangeCheckCode();
-      //update-end-author:taoyan date:2022-5-3 for: issues/41 登录页面，当输入验证码错误时，验证码图片要刷新一下，而不是保持旧的验证码图片不变
     }
   }
   function handleChangeCheckCode() {
     formData.inputCode = '';
-    //TODO 兼容mock和接口，暂时这样处理
-    randCodeData.checkKey = 1629428467008; //new Date().getTime();
+    // 代码逻辑说明: [QQYUN-10775]验证码可以复用 #7674------------
+    randCodeData.checkKey = new Date().getTime() + Math.random().toString(36).slice(-4); // 1629428467008;
     getCodeInfo(randCodeData.checkKey).then((res) => {
       randCodeData.randCodeImage = res;
       randCodeData.requestCodeSuccess = true;

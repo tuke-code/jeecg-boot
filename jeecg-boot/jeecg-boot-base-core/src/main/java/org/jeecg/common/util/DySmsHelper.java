@@ -1,5 +1,6 @@
 package org.jeecg.common.util;
 
+import cn.hutool.core.collection.CollectionUtil;
 import com.alibaba.fastjson.JSONObject;
 import com.aliyuncs.DefaultAcsClient;
 import com.aliyuncs.IAcsClient;
@@ -8,10 +9,16 @@ import com.aliyuncs.dysmsapi.model.v20170525.SendSmsResponse;
 import com.aliyuncs.exceptions.ClientException;
 import com.aliyuncs.profile.DefaultProfile;
 import com.aliyuncs.profile.IClientProfile;
+import org.apache.commons.lang3.StringUtils;
+import org.jeecg.common.constant.CommonConstant;
 import org.jeecg.common.constant.enums.DySmsEnum;
+import org.jeecg.config.JeecgBaseConfig;
+import org.jeecg.config.JeecgSmsTemplateConfig;
 import org.jeecg.config.StaticConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Map;
 
 /**
  * Created on 17/6/7.
@@ -56,17 +63,21 @@ public class DySmsHelper {
     
     
     public static boolean sendSms(String phone, JSONObject templateParamJson, DySmsEnum dySmsEnum) throws ClientException {
-    	//可自助调整超时时间
+        JeecgBaseConfig config = SpringContextUtils.getBean(JeecgBaseConfig.class);
+        String smsSendType = config.getSmsSendType();
+        if(oConvertUtils.isNotEmpty(smsSendType) && CommonConstant.SMS_SEND_TYPE_TENCENT.equals(smsSendType)){
+            return TencentSms.sendTencentSms(phone, templateParamJson, config.getTencent(), dySmsEnum);
+        }
+        //可自助调整超时时间
         System.setProperty("sun.net.client.defaultConnectTimeout", "10000");
         System.setProperty("sun.net.client.defaultReadTimeout", "10000");
 
-        //update-begin-author：taoyan date:20200811 for:配置类数据获取
+        // 代码逻辑说明: 配置类数据获取
         StaticConfig staticConfig = SpringContextUtils.getBean(StaticConfig.class);
         //logger.info("阿里大鱼短信秘钥 accessKeyId：" + staticConfig.getAccessKeyId());
         //logger.info("阿里大鱼短信秘钥 accessKeySecret："+ staticConfig.getAccessKeySecret());
         setAccessKeyId(staticConfig.getAccessKeyId());
         setAccessKeySecret(staticConfig.getAccessKeySecret());
-        //update-end-author：taoyan date:20200811 for:配置类数据获取
         
         //初始化acsClient,暂不支持region化
         IClientProfile profile = DefaultProfile.getProfile("cn-hangzhou", accessKeyId, accessKeySecret);
@@ -75,15 +86,32 @@ public class DySmsHelper {
         
         //验证json参数
         validateParam(templateParamJson,dySmsEnum);
+
+        // 代码逻辑说明: 【QQYUN-9422】短信模板管理，阿里云---
+        String templateCode = dySmsEnum.getTemplateCode();
+        JeecgSmsTemplateConfig baseConfig = SpringContextUtils.getBean(JeecgSmsTemplateConfig.class);
+        if(baseConfig != null && CollectionUtil.isNotEmpty(baseConfig.getTemplateCode())){
+            Map<String, String> smsTemplate = baseConfig.getTemplateCode();
+            if(smsTemplate.containsKey(templateCode) && StringUtils.isNotEmpty(smsTemplate.get(templateCode))){
+                templateCode = smsTemplate.get(templateCode);   
+                logger.info("yml中读取短信code{}",templateCode);
+            }
+        }
+        //签名名称
+        String signName = dySmsEnum.getSignName();
+        if(baseConfig != null && StringUtils.isNotEmpty(baseConfig.getSignature())){
+            logger.info("yml中读取签名名称{}",baseConfig.getSignature());
+            signName = baseConfig.getSignature();
+        }
         
         //组装请求对象-具体描述见控制台-文档部分内容
         SendSmsRequest request = new SendSmsRequest();
         //必填:待发送手机号
         request.setPhoneNumbers(phone);
         //必填:短信签名-可在短信控制台中找到
-        request.setSignName(dySmsEnum.getSignName());
+        request.setSignName(signName);
         //必填:短信模板-可在短信控制台中找到
-        request.setTemplateCode(dySmsEnum.getTemplateCode());
+        request.setTemplateCode(templateCode);
         //可选:模板中的变量替换JSON串,如模板内容为"亲爱的${name},您的验证码为${code}"时,此处的值为
         request.setTemplateParam(templateParamJson.toJSONString());
         

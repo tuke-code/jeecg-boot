@@ -52,9 +52,9 @@ export function filterDictText(dictOptions, text) {
     for (let txt of splitText) {
       let dictText = txt;
       for (let dictItem of dictOptions) {
-        // update-begin--author:liaozhiyang---date:20240524---for：【TV360X-469】兼容数据null值防止报错
-        if (dictItem == null) break;
-        // update-end--author:liaozhiyang---date:20240524---for：【TV360X-469】兼容数据null值防止报错
+        // 代码逻辑说明: 【TV360X-469】兼容数据null值防止报错
+        if (dictItem == null) continue;
+        if (dictItem.value == null) continue;
         if (txt.toString() === dictItem.value.toString()) {
           dictText = dictItem.text || dictItem.title || dictItem.label;
           break;
@@ -109,6 +109,33 @@ export function filterMultiDictText(dictOptions, text) {
 }
 
 /**
+ * 字典值替换文本通用方法(多选)
+ * @param dictOptions  字典数组
+ * @param val  字典值
+ * @return {*[]} 返回字典项原对象
+ */
+export function filterMultiDictObjs(dictOptions, val) {
+  val = val?.toString?.() ?? '';
+  if (!val || !dictOptions || dictOptions.length === 0) {
+    return [];
+  }
+  const objs = [];
+  const vals = val.split(',');
+  for (const item of vals) {
+    const option = dictOptions.find((option) => option && option.value === item);
+    if (option) {
+      objs.push({
+        value: item,
+        text: option.text || option.title || option.label,
+        color: option.color,
+        hasColor: !!option.color,
+      });
+    }
+  }
+  return objs;
+}
+
+/**
  * 翻译字段值对应的文本
  * @param children
  * @returns string
@@ -131,7 +158,6 @@ export function filterDictTextByCache(dictCode, key) {
 
 /** 通过code获取字典数组 */
 export async function getDictItems(dictCode, params) {
-  // update-begin--author:liaozhiyang---date:20230809---for：【issues/668】JDictSelectUtil数据字典工具类中的getDictItems方法出错
   //优先从缓存中读取字典配置
   if (getDictItemsByCode(dictCode)) {
     let desformDictItems = getDictItemsByCode(dictCode).map((item) => ({
@@ -157,5 +183,4 @@ export async function getDictItems(dictCode, params) {
       console.error('getDictItems error: ', res);
       return Promise.resolve([]);
     });
-  // update-end--author:liaozhiyang---date:20230809---for：【issues/668】JDictSelectUtil数据字典工具类中的getDictItems方法出错
 }

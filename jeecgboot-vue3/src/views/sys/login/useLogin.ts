@@ -166,12 +166,18 @@ async function checkPhone(rule, value, callback) {
   }
 }
 
-//update-begin---author:wangshuai ---date:20220629  for：[issues/I5BG1I]vue3不支持auth2登录------------
 /**
  * 判断是否是OAuth2APP环境
  */
 export function isOAuth2AppEnv() {
   return /wxwork|dingtalk/i.test(navigator.userAgent);
+}
+
+/**
+ * 判断是否是钉钉环境
+ */
+export function isOAuth2DingAppEnv() {
+  return /dingtalk/i.test(navigator.userAgent);
 }
 
 /**
@@ -182,12 +188,24 @@ export function isOAuth2AppEnv() {
 export function sysOAuth2Login(source) {
   let url = `${window._CONFIG['domianURL']}/sys/thirdLogin/oauth2/${source}/login`;
   url += `?state=${encodeURIComponent(window.location.origin)}`;
-  //update-begin---author:wangshuai ---date:20230224  for：[QQYUN-3440]新建企业微信和钉钉配置表，通过租户模式隔离------------
+  // 代码逻辑说明: [QQYUN-3440]新建企业微信和钉钉配置表，通过租户模式隔离------------
   let tenantId = getAuthCache(OAUTH2_THIRD_LOGIN_TENANT_ID);
   if(tenantId){
     url += `&tenantId=${tenantId}`;
   }
-  //update-end---author:wangshuai ---date:20230224  for：[QQYUN-3440]新建企业微信和钉钉配置表，通过租户模式隔离------------
   window.location.href = url;
 }
-//update-end---author:wangshuai ---date:20220629  for：[issues/I5BG1I]vue3不支持auth2登录------------
+
+/**
+ * 后台callBack
+ * @param code
+ */
+export function sysOAuth2Callback(code:string) {
+  let url = `${window._CONFIG['domianURL']}/sys/thirdLogin/oauth2/dingding/login`;
+  url += `?state=${encodeURIComponent(window.location.origin)}&authCode=${code}`;
+  let tenantId = getAuthCache(OAUTH2_THIRD_LOGIN_TENANT_ID);
+  if(tenantId){
+    url += `&tenantId=${tenantId}`;
+  }
+  window.location.href = url;
+}

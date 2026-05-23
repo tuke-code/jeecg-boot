@@ -13,9 +13,9 @@
       </span>
     </template>
     <template #content>
-      <a-textarea ref="textareaRef" :value="innerValue" :disabled="disabled" :style="textareaStyle" v-bind="attrs" @input="onInputChange" />
+      <a-textarea ref="textareaRef" :value="innerValue" :disabled="disabled" :style="textareaStyle" v-bind="attrs" @input="onInputChange" @blur="onInputBlur" />
     </template>
-    <a-input :class="`${prefixCls}-input`" :value="innerValue" :disabled="disabled" v-bind="attrs" @change="onInputChange">
+    <a-input :class="`${prefixCls}-input`" :value="innerValue" :disabled="disabled" v-bind="attrs" @change="onInputChange" @blur="onInputBlur">
       <template #suffix>
         <Icon icon="ant-design:fullscreen-outlined" @click.stop="onShowPopup" />
       </template>
@@ -44,7 +44,7 @@
     popContainer: propTypes.oneOfType([propTypes.string, propTypes.func]).def(''),
   });
   const attrs = useAttrs();
-  const emit = defineEmits(['change', 'update:value']);
+  const emit = defineEmits(['change', 'update:value', 'blur']);
 
   const visible = ref<boolean>(false);
   const innerValue = ref<string>('');
@@ -92,6 +92,10 @@
     emit('change', value);
     emit('update:value', value);
   }
+
+  const onInputBlur = (event) => {
+    emit('blur', event);
+  }
 </script>
 
 <style lang="less">
@@ -100,11 +104,10 @@
 
   .@{prefix-cls} {
     &-popover {
-      // update-begin--author:liaozhiyang---date:20240520---for：【TV360X-144】jVxetable中的多行文本组件当title没有时去掉多余的线
+      // 代码逻辑说明: 【TV360X-144】jVxetable中的多行文本组件当title没有时去掉多余的线
       .ant-popover-title:has(.emptyTitle) {
         border-bottom: none;
       }
-      // update-end--author:liaozhiyang---date:20240520---for：【TV360X-144】jVxetable中的多行文本组件当title没有时去掉多余的线
     }
 
     &-input {

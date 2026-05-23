@@ -34,9 +34,9 @@
 </#macro>
 
 <#macro commonScript>
-	<!-- jQuery 2.1.4 -->
+	<!-- jQuery -->
 	<script src="${request.contextPath}/static/adminlte/bower_components/jquery/jquery.min.js"></script>
-	<!-- Bootstrap 3.3.5 -->
+	<!-- Bootstrap -->
 	<script src="${request.contextPath}/static/adminlte/bower_components/bootstrap/js/bootstrap.min.js"></script>
 	<!-- FastClick -->
 	<script src="${request.contextPath}/static/adminlte/bower_components/fastclick/fastclick.js"></script>
@@ -84,7 +84,7 @@
 					<#-- login user -->
                     <li class="dropdown">
                         <a href="javascript:" class="dropdown-toggle" data-toggle="dropdown" aria-expanded="false">
-                            ${I18n.system_welcome} ${Request["XXL_JOB_LOGIN_IDENTITY"].username}
+                            ${I18n.system_welcome} ${XXL_JOB_LOGIN_IDENTITY.username}
                             <span class="caret"></span>
                         </a>
                         <ul class="dropdown-menu" role="menu">
@@ -137,7 +137,7 @@
                 <li class="nav-click <#if pageName == "index">active</#if>" ><a href="${request.contextPath}/"><i class="fa fa-circle-o text-aqua"></i><span>${I18n.job_dashboard_name}</span></a></li>
 				<li class="nav-click <#if pageName == "jobinfo">active</#if>" ><a href="${request.contextPath}/jobinfo"><i class="fa fa-circle-o text-yellow"></i><span>${I18n.jobinfo_name}</span></a></li>
 				<li class="nav-click <#if pageName == "joblog">active</#if>" ><a href="${request.contextPath}/joblog"><i class="fa fa-circle-o text-green"></i><span>${I18n.joblog_name}</span></a></li>
-				<#if Request["XXL_JOB_LOGIN_IDENTITY"].role == 1>
+				<#if XXL_JOB_LOGIN_IDENTITY.role == 1>
                     <li class="nav-click <#if pageName == "jobgroup">active</#if>" ><a href="${request.contextPath}/jobgroup"><i class="fa fa-circle-o text-red"></i><span>${I18n.jobgroup_name}</span></a></li>
                     <li class="nav-click <#if pageName == "user">active</#if>" ><a href="${request.contextPath}/user"><i class="fa fa-circle-o text-purple"></i><span>${I18n.user_manage}</span></a></li>
 				</#if>

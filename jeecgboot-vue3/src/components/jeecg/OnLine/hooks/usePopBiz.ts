@@ -9,9 +9,11 @@ import { useRouter, useRoute } from 'vue-router';
 import { useMethods } from '/@/hooks/system/useMethods';
 import { importViewsFile, _eval } from '/@/utils';
 import {getToken} from "@/utils/auth";
+import {replaceUserInfoByExpression} from "@/utils/common/compUtils";
+import { isString } from '/@/utils/is';
 
 export function usePopBiz(ob, tableRef?) {
-  // update-begin--author:liaozhiyang---date:20230811---for：【issues/675】子表字段Popup弹框数据不更新
+  // 代码逻辑说明: 【issues/675】子表字段Popup弹框数据不更新
   let props: any;
   if (isRef(ob)) {
     props = ob.value;
@@ -22,7 +24,6 @@ export function usePopBiz(ob, tableRef?) {
   } else {
     props = ob;
   }
-  // update-end--author:liaozhiyang---date:20230811---for：【issues/675】子表字段Popup弹框数据不更新
   const { createMessage } = useMessage();
   //弹窗可视状态
   const visible = ref(false);
@@ -113,16 +114,13 @@ export function usePopBiz(ob, tableRef?) {
    * @param selectRow
    */
   function onSelectChange(selectedRowKeys: (string | number)[]) {
-    // update-begin--author:liaozhiyang---date:20240105---for：【QQYUN-7514】popup单选显示radio
+    // 代码逻辑说明: 【QQYUN-7514】popup单选显示radio
     if (!props.multi) {
       selectRows.value = [];
       checkedKeys.value = [];
-      // update-begin--author:liaozhiyang---date:20240717---for：【issues/6883】单选模式第二次打开已勾选
       // selectedRowKeys = [selectedRowKeys[selectedRowKeys.length - 1]];
-      // update-end--author:liaozhiyang---date:20240717---for：【issues/6883】单选模式第二次打开已勾选
     }
-    // update-end--author:liaozhiyang---date:20240105---for：【QQYUN-7514】popup单选显示radio
-    // update-begin--author:liaozhiyang---date:20230919---for：【QQYUN-4263】跨页选择导出问题
+    // 代码逻辑说明: 【QQYUN-4263】跨页选择导出问题
     if (!selectedRowKeys || selectedRowKeys.length == 0) {
       selectRows.value = [];
       checkedKeys.value = [];
@@ -150,7 +148,6 @@ export function usePopBiz(ob, tableRef?) {
       }
       checkedKeys.value = [...selectedRowKeys];
     }
-    // update-end--author:liaozhiyang---date:20230919---for：【QQYUN-4263】跨页选择导出问题
   }
   /**
    * 过滤没用选项
@@ -177,10 +174,15 @@ export function usePopBiz(ob, tableRef?) {
    */
   function combineRowKey(record) {
     let res = record?.id || '';
-    Object.keys(record).forEach((key) => {
-      res = key == 'rowIndex' ? record[key] + res : res + record[key];
-    });
-    res = res.length > 50 ? res.substring(0, 50) : res;
+    if (props?.rowkey) {
+      // 代码逻辑说明: 【issues/3656】popupdict回显
+      res = record[props.rowkey];
+    } else {
+      Object.keys(record).forEach((key) => {
+        res = key == 'rowIndex' ? record[key] + res : res + record[key];
+      });
+      res = res.length > 50 ? res.substring(0, 50) : res;
+    }
     return res;
   }
 
@@ -188,7 +190,8 @@ export function usePopBiz(ob, tableRef?) {
    * 加载列信息
    */
   function loadColumnsInfo() {
-    let url = `${configUrl.getColumns}${props.code}`;
+    const {code} = handleCodeParams(true)
+    let url = `${configUrl.getColumns}${code}`;
     //缓存key
     let groupIdKey = props.groupId ? `${props.groupId}${url}` : '';
     httpGroupRequest(() => defHttp.get({ url }, { isTransformResponse: false, successMessageMode: 'none' }), groupIdKey).then((res) => {
@@ -209,6 +212,14 @@ export function usePopBiz(ob, tableRef?) {
             currColumns[a].sortOrder = unref(iSorter).order === 'asc' ? 'ascend' : 'descend';
           }
         }
+        // 代码逻辑说明: 【issues/946】popup列宽和在线报表列宽读取配置
+        currColumns.forEach((item) => {
+          if (item.fieldWidth != null) {
+            if (isString(item.fieldWidth) && item.fieldWidth.trim().length == 0) return;
+            item.width = item.fieldWidth;
+            delete item.fieldWidth;
+          }
+        });
         if (currColumns[0].key !== 'rowIndex') {
           currColumns.unshift({
             title: '序号',
@@ -217,13 +228,12 @@ export function usePopBiz(ob, tableRef?) {
             width: 60,
             align: 'center',
             customRender: function ({ text }) {
-              // update-begin--author:liaozhiyang---date:20231226---for：【QQYUN-7584】popup有合计时序号列会出现NaN
+              // 代码逻辑说明: 【QQYUN-7584】popup有合计时序号列会出现NaN
               if (text == undefined) {
                 return '';
               } else {
                 return parseInt(text) + 1;
               }
-              // update-end--author:liaozhiyang---date:20231226---for：【QQYUN-7584】popup有合计时序号列会出现NaN
             },
           });
         }
@@ -240,6 +250,11 @@ export function usePopBiz(ob, tableRef?) {
     // 第一次加载 置空isTotal 在这里调用确保 该方法只是进入页面后 加载一次 其余查询不走该方法
     pagination.isTotal = '';
     let url = `${configUrl.getColumnsAndData}${props.id}`;
+
+    const {query} = handleCodeParams()
+    if (query) {
+      url = url + query
+    }
     //缓存key
     let groupIdKey = props.groupId ? `${props.groupId}${url}` : '';
     httpGroupRequest(() => defHttp.get({ url }, { isTransformResponse: false, successMessageMode: 'none' }), groupIdKey).then((res) => {
@@ -251,7 +266,15 @@ export function usePopBiz(ob, tableRef?) {
         // href 跳转
         const fieldHrefSlotKeysMap = {};
         fieldHrefSlots.forEach((item) => (fieldHrefSlotKeysMap[item.slotName] = item));
-        let currColumns = handleColumnHrefAndDict(metaColumnList, fieldHrefSlotKeysMap);
+        let currColumns: any = handleColumnHrefAndDict(metaColumnList, fieldHrefSlotKeysMap);
+        // 代码逻辑说明: 【issues/946】popup列宽和在线报表列宽读取配置
+        currColumns.forEach((item) => {
+          if (isString(item.fieldWidth) && item.fieldWidth.trim().length == 0) return;
+          if (item.fieldWidth != null) {
+            item.width = item.fieldWidth;
+            delete item.fieldWidth;
+          }
+        });
 
         // popup需要序号， 普通列表不需要
         if (clickThenCheckFlag === true) {
@@ -274,11 +297,43 @@ export function usePopBiz(ob, tableRef?) {
         columns.value = [...currColumns];
         initQueryInfo(res.result.data);
       } else {
-        //update-begin-author:taoyan date:20220401 for: VUEN-583【vue3】JeecgBootException: sql黑名单校验不通过,请联系管理员!,前台无提示
+        // 代码逻辑说明: VUEN-583【vue3】JeecgBootException: sql黑名单校验不通过,请联系管理员!,前台无提示
         createMessage.warning(res.message);
-        //update-end-author:taoyan date:20220401 for: VUEN-583【vue3】JeecgBootException: sql黑名单校验不通过,请联系管理员!,前台无提示
       }
     });
+  }
+
+  // 处理动态参数和系统变量
+  function handleCodeParams(onlyCode: boolean = false) {
+    if (!props.code) {
+      return {code: '', query: ''}
+    }
+    const firstIndex = props.code.indexOf('?')
+    if (firstIndex === -1) {
+      return {code: props.code, query: ''}
+    }
+    const code = props.code.substring(0, firstIndex)
+    if (onlyCode) {
+      return {code: code, query: ''}
+    }
+    const queryOrigin = props.code.substring(firstIndex, props.code.length);
+    let query: string
+    // 替换系统变量
+    query = replaceUserInfoByExpression(queryOrigin)
+    // 获取表单值
+    if (typeof props.getFormValues === 'function') {
+      const values = props.getFormValues()
+      // 替换动态参数，如果有 ${xxx} 则替换为实际值
+      query = query.replace(/\${([^}]+)}/g, (_$0, $1) => {
+        if (values[$1] == null) {
+          return ''
+        }
+        return values[$1]
+      });
+
+    }
+
+    return {code, query, queryOrigin}
   }
 
   /**
@@ -472,9 +527,8 @@ export function usePopBiz(ob, tableRef?) {
               return getToken()
             }
 
-            // update-begin--author:liaozhiyang---date:20230904---for：【QQYUN-6390】eval替换成new Function，解决build警告
+            // 代码逻辑说明: 【QQYUN-6390】eval替换成new Function，解决build警告
             return _eval(s0);
-            // update-end--author:liaozhiyang---date:20230904---for：【QQYUN-6390】eval替换成new Function，解决build警告
           } catch (e) {
             console.error(e);
             return text;
@@ -502,10 +556,15 @@ export function usePopBiz(ob, tableRef?) {
     // 【VUEN-1568】如果选中了某些行，就只导出选中的行
     let keys = unref(checkedKeys);
     if (keys.length > 0) {
-      params['force_id'] = keys
+      keys = keys
         .map((i) => selectRows.value.find((item) => combineRowKey(item) === i)?.id)
-        .filter((i) => i != null && i !== '')
-        .join(',');
+        .filter((i) => i != null && i !== '');
+      // 判断是否有ID字段
+      if (keys.length === 0) {
+        createMessage.warning('由于数据中缺少ID字段，故无法使用选中导出功能');
+        return;
+      }
+      params['force_id'] = keys.join(',');
     }
     handleExportXls(title.value, url, params);
   }
@@ -589,19 +648,20 @@ export function usePopBiz(ob, tableRef?) {
     params['onlRepUrlParamStr'] = getUrlParamString();
     console.log('params', params);
     loading.value = true;
-    // update-begin--author:liaozhiyang---date:20240603---for：【TV360X-578】online报表SQL翻译，第二页不翻页数据
+    // 代码逻辑说明: 【TV360X-578】online报表SQL翻译，第二页不翻页数据
     let url = `${configUrl.getColumnsAndData}${unref(cgRpConfigId)}`;
-    // update-end--author:liaozhiyang---date:20240603---for：【TV360X-578】online报表SQL翻译，第二页不翻页数据
+    const {query} = handleCodeParams()
+    if (query) {
+      url = url + query
+    }
     //缓存key
     let groupIdKey = props.groupId ? `${props.groupId}${url}${JSON.stringify(params)}` : '';
     httpGroupRequest(() => defHttp.get({ url, params }, { isTransformResponse: false, successMessageMode: 'none' }), groupIdKey).then((res) => {
-      // update-begin--author:liaozhiyang---date:20240603---for：【TV360X-578】online报表SQL翻译，第二页不翻页数据
+      // 代码逻辑说明: 【TV360X-578】online报表SQL翻译，第二页不翻页数据
       res.result.dictOptions && initDictOptionData(res.result.dictOptions);
-      // update-end--author:liaozhiyang---date:20240603---for：【TV360X-578】online报表SQL翻译，第二页不翻页数据
       loading.value = false;
-      // update-begin--author:liaozhiyang---date:20240603---for：【TV360X-578】online报表SQL翻译，第二页不翻页数据
+      // 代码逻辑说明: 【TV360X-578】online报表SQL翻译，第二页不翻页数据
       let data = res.result.data;
-      // update-end--author:liaozhiyang---date:20240603---for：【TV360X-578】online报表SQL翻译，第二页不翻页数据
       console.log('表格信息:', data);
       setDataSource(data);
     });
@@ -634,13 +694,10 @@ export function usePopBiz(ob, tableRef?) {
         }
       }
       dataSource.value = data.records;
-      //update-begin-author:taoyan date:2023-2-11 for:issues/356 在线报表分页有问题
-      //update-begin-author:liusq date:2023-4-04 for:issues/426 修复356时候引入的回归错误 JPopupOnlReportModal.vue 中未修改
+      // 代码逻辑说明: issues/426 修复356时候引入的回归错误 JPopupOnlReportModal.vue 中未修改
       tableRef?.value && tableRef?.value?.setPagination({
         total: Number(data.total)
       })
-      //update-end-author:liusq date:2023-4-04  for:issues/426 修复356时候引入的回归错误 JPopupOnlReportModal.vue 中未修改
-      //update-end-author:taoyan date:2023-2-11 for:issues/356 在线报表分页有问题
     } else {
       pagination.total = 0;
       dataSource.value = [];
@@ -691,7 +748,8 @@ export function usePopBiz(ob, tableRef?) {
     if (props.param) {
       Object.keys(props.param).map((key) => {
         let str = props.param[key];
-        if (key in queryParam) {
+        //【issues/8426】解决JPopup组件传参不能接收
+        if (key in queryParam.value) {
           if (str && str.startsWith("'") && str.endsWith("'")) {
             str = str.substring(1, str.length - 1);
           }
@@ -736,12 +794,11 @@ export function usePopBiz(ob, tableRef?) {
    */
   function clickThenCheck(record) {
     if (clickThenCheckFlag === true) {
-      // update-begin--author:liaozhiyang---date:20240104---for：【QQYUN-7514】popup单选显示radio
+      // 代码逻辑说明: 【QQYUN-7514】popup单选显示radio
       if (!props.multi) {
         selectRows.value = [];
         checkedKeys.value = [];
       }
-      // update-end--author:liaozhiyang---date:20240104---for：【QQYUN-7514】popup单选显示radio
       let rowKey = combineRowKey(record);
       if (!unref(checkedKeys) || unref(checkedKeys).length == 0) {
         let arr1: any[] = [],
@@ -762,9 +819,8 @@ export function usePopBiz(ob, tableRef?) {
           //selectRows.value.splice(rowKey_index, 1);
         }
       }
-      // update-begin--author:liaozhiyang---date:20230914---for：【issues/5357】点击行选中
+      // 代码逻辑说明: 【issues/5357】点击行选中
       tableRef.value.setSelectedRowKeys([...checkedKeys.value]);
-      // update-end--author:liaozhiyang---date:20230914---for：【issues/5357】点击行选中
     }
   }
 
@@ -856,7 +912,6 @@ export function usePopBiz(ob, tableRef?) {
     hrefComponent.value.is = markRaw(defineAsyncComponent(() => importViewsFile(path)));
   }
 
-  //update-begin-author:taoyan date:2022-5-31 for: VUEN-1155 popup 选择数据时，会选择多条重复数据
   /**
    * emit事件 获取选中的行数据
    */
@@ -882,7 +937,6 @@ export function usePopBiz(ob, tableRef?) {
     }
     return rows;
   }
-  //update-end-author:taoyan date:2022-5-31 for: VUEN-1155 popup 选择数据时，会选择多条重复数据
 
   return [
     {

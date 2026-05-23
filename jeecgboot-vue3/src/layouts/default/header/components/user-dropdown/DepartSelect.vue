@@ -21,7 +21,7 @@
           </template>
         </a-select>
       </a-form-item>
-      <a-form-item v-if="isMultiDepart" :validate-status="validate_status1">
+      <a-form-item v-if="isMultiDepart && departList.length > 0" :validate-status="validate_status1">
         <!--label内容-->
         <template #label>
           <a-tooltip placement="topLeft">
@@ -37,7 +37,7 @@
             <Icon icon="ant-design:gold-outline" />
           </template>
           <template v-for="depart in departList" :key="depart.orgCode">
-            <a-select-option :value="depart.orgCode">{{ depart.departName }}</a-select-option>
+            <a-select-option :value="depart.orgCode">{{ getShortDeptName(depart) }} </a-select-option>
           </template>
         </a-select>
       </a-form-item>
@@ -94,6 +94,16 @@
   const validate_status1 = ref('');
   //弹窗显隐
   const visible = ref(false);
+  //获取部门缩写
+  const getShortDeptName = computed(()=>{
+    return (depart) => {
+      let deptName = depart.departNameAbbr || depart.departPathName || depart.departName;
+      if (deptName.length > 18) {
+        return '...' + deptName.substring(deptName.length-18, deptName.length) ;
+      }
+      return deptName;
+    };
+  })
   /**
    * 弹窗打开前处理
    */
@@ -126,8 +136,12 @@
       return;
     }
     let currentDepart = result.list.filter((item) => item.orgCode == result.orgCode);
-    departList.value = result.list;
-    departSelected.value = currentDepart && currentDepart.length > 0 ? result.orgCode : '';
+    //TODO 筛选出用户的部门信息（排除公司或者岗位配置）后期回滚
+    const userDeparts = result.list.filter((item) => item.orgCategory == '2');
+    departList.value = userDeparts;
+    // 代码逻辑说明: JHHB-790 用户部门变更，会出现这个情况（因为之前设置的这里只切换部门，过滤了公司和岗位信息）
+    const hasCurrentDepart = userDeparts.some(item => item.orgCode == result.orgCode);
+    departSelected.value = hasCurrentDepart && currentDepart && currentDepart.length > 0 ? result.orgCode : '';
     currentDepartName.value = currentDepart && currentDepart.length > 0 ? currentDepart[0].departName : '';
     isMultiDepart.value = true;
   }
@@ -155,7 +169,7 @@
       validate_status.value = 'error';
       return false;
     }
-    if (unref(isMultiDepart) && !unref(departSelected)) {
+    if (unref(isMultiDepart) && unref(departList).length > 0 && !unref(departSelected)) {
       validate_status1.value = 'error';
       return false;
     }
@@ -184,7 +198,7 @@
    */
   function departResolve() {
     return new Promise(async (resolve, reject) => {
-      if (!unref(isMultiDepart)) {
+      if (!unref(isMultiDepart) || unref(departList).length == 0) {
         resolve();
       } else {
         const result = await selectDepart({

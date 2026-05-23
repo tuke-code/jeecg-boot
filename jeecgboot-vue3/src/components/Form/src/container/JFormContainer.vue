@@ -1,5 +1,5 @@
 <template>
-  <div :class="formDisabled ? 'jeecg-form-container-disabled jeecg-form-detail-effect' : ''">
+  <div :class="formDisabled ? 'jeecg-form-container-disabled jeecg-form-detail-effect' : 'jeecg-and-modal-form'">
     <fieldset :disabled="formDisabled">
       <slot name="detail"></slot>
     </fieldset>
@@ -39,6 +39,23 @@
 </script>
 
 <style scoped lang="less">
+  // 代码逻辑说明: 【TV360X-1090】表单label超长省略显示
+  .jeecg-and-modal-form {
+    :deep(.ant-form-item-label) {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding-right: 6px;
+      > label {
+        line-height: 32px;
+        display: inline;
+        &::after {
+          margin-right: 0;
+        }
+      }
+    }
+  }
+  // update-end--author:liaozhiyang---date:20240719---for：【TV360X-1090】表单label超长省略显示
   .jeecg-form-container-disabled {
     cursor: not-allowed;
   }
@@ -178,7 +195,7 @@
     }
   }
   // end antdv 禁用样式
-  // update-begin--author:liaozhiyang---date:20240605---for：【TV360X-857】online代码生成详情样式调整
+  // 代码逻辑说明: 【TV360X-857】online代码生成详情样式调整
   .jeecg-form-container-disabled :deep(.ant-upload-select) {
     cursor: grabbing;
   }

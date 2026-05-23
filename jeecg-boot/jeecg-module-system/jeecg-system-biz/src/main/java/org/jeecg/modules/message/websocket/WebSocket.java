@@ -1,10 +1,12 @@
 package org.jeecg.modules.message.websocket;
 
+import java.io.EOFException;
+import java.nio.channels.ClosedChannelException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import javax.websocket.*;
-import javax.websocket.server.PathParam;
-import javax.websocket.server.ServerEndpoint;
+import jakarta.websocket.*;
+import jakarta.websocket.server.PathParam;
+import jakarta.websocket.server.ServerEndpoint;
 
 import com.alibaba.fastjson.JSONObject;
 import org.jeecg.common.base.BaseMap;
@@ -56,7 +58,7 @@ public class WebSocket {
             sessionPool.remove(userId);
             log.debug("【系统 WebSocket】连接断开，总数为:" + sessionPool.size());
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("【系统 WebSocket】连接断开异常", e);
         }
     }
 
@@ -73,12 +75,11 @@ public class WebSocket {
             if (item.getKey().contains(userId)) {
                 Session session = item.getValue();
                 try {
-                    //update-begin-author:taoyan date:20211012 for: websocket报错 https://gitee.com/jeecg/jeecg-boot/issues/I4C0MU
+                    // 代码逻辑说明: websocket报错 https://gitee.com/jeecg/jeecg-boot/issues/I4C0MU
                     synchronized (session){
                         log.debug("【系统 WebSocket】推送单人消息:" + message);
                         session.getBasicRemote().sendText(message);
                     }
-                    //update-end-author:taoyan date:20211012 for: websocket报错 https://gitee.com/jeecg/jeecg-boot/issues/I4C0MU
                 } catch (Exception e) {
                     log.error(e.getMessage(),e);
                 }
@@ -114,9 +115,8 @@ public class WebSocket {
             log.debug("【系统 WebSocket】收到客户端消息:" + message);
         }else{
             log.debug("【系统 WebSocket】收到客户端消息:" + message);
-            //update-begin---author:wangshuai---date:2024-05-07---for:【issues/1161】前端websocket因心跳导致监听不起作用---
+            // 代码逻辑说明: 【issues/1161】前端websocket因心跳导致监听不起作用---
             this.sendMessage(userId, "ping");
-            //update-end---author:wangshuai---date:2024-05-07---for:【issues/1161】前端websocket因心跳导致监听不起作用---
         }
         
 //        //------------------------------------------------------------------------------
@@ -137,8 +137,13 @@ public class WebSocket {
      */
     @OnError
     public void onError(Session session, Throwable t) {
-        log.warn("【系统 WebSocket】消息出现错误");
-        t.printStackTrace();
+        // ClosedChannelException / EOFException 是应用关闭时 Tomcat 主动断开连接的正常现象，降级为 debug
+        Throwable cause = t.getCause() != null ? t.getCause() : t;
+        if (cause instanceof ClosedChannelException || cause instanceof EOFException) {
+            log.debug("【系统 WebSocket】连接已关闭（正常关闭）: {}", t.getMessage());
+        } else {
+            log.warn("【系统 WebSocket】消息出现错误", t);
+        }
     }
     //==========【系统 WebSocket接受、推送消息等方法 —— 具体服务节点推送ws消息】========================================================================================
     

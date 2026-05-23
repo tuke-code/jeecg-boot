@@ -2,13 +2,20 @@ import { useGlobSetting } from '/@/hooks/setting';
 import { merge, random } from 'lodash-es';
 import { isArray } from '/@/utils/is';
 import { FormSchema } from '/@/components/Form';
-import { reactive } from "vue";
+import { h, reactive, ref } from "vue";
 import { getTenantId, getToken } from "/@/utils/auth";
 import { useUserStoreWithOut } from "/@/store/modules/user";
+import dayjs from 'dayjs';
+import Big from 'big.js';
 
 import { Modal } from "ant-design-vue";
 import { defHttp } from "@/utils/http/axios";
 import { useI18n } from "@/hooks/web/useI18n";
+import {$electron} from "@/electron";
+import {router} from "@/router";
+import {encryptByBase64} from "@/utils/cipher";
+//存放部门路径的数组
+const departNamePath = ref<Record<string, string>>({});
 
 const globSetting = useGlobSetting();
 const baseApiUrl = globSetting.domainUrl;
@@ -33,6 +40,17 @@ export const getFileAccessHttpUrl = (fileUrl, prefix = 'http') => {
     }
   } catch (err) {}
   return result;
+};
+/**
+ *  获取桌面端wps的文件服务访问路径
+ * @param fileUrl 文件路径
+ */
+export const getElectronFileUrl = (url) => {
+  let fileUrl: any = url;
+  if (url && $electron.isElectron()) {
+    fileUrl = router.resolve({path: '/onlinePreview', query: {url: encryptByBase64(getFileAccessHttpUrl(url))}}).href;
+  }
+  return fileUrl;
 };
 
 /**
@@ -144,14 +162,16 @@ export function mapTableTotalSummary(tableData: Recordable[], fieldKeys: string[
   let totals: any = { _row: '合计', _index: '合计' };
   fieldKeys.forEach((key) => {
     totals[key] = tableData.reduce((prev, next) => {
-      // update-begin--author:liaozhiyang---date:20240118---for：【QQYUN-7891】PR 合计工具方法，转换为Nuber类型再计算
+      // 代码逻辑说明: 【QQYUN-7891】PR 合计工具方法，转换为Nuber类型再计算
       const value = Number(next[key]);
       if (!Number.isNaN(value)) {
-        prev += value;
+        // 代码逻辑说明: 【issues/7830】合计小数计算精度
+        prev = Big(prev).plus(value).toString();
       }
-      // update-end--author:liaozhiyang---date:20240118---for：【QQYUN-7891】PR 合计工具方法，转换为Nuber类型再计算
       return prev;
     }, 0);
+    // 代码逻辑说明: 【issues/7830】合计小数计算精度
+    totals[key] = +totals[key];
   });
   return totals;
 }
@@ -416,6 +436,14 @@ export function getUserInfoByExpression(expression) {
   if (!expression) {
     return expression;
   }
+  // 当前日期
+  if (expression === 'sys_date' || expression === 'sysDate') {
+    return dayjs().format('YYYY-MM-DD');
+  }
+  // 当前时间
+  if (expression === 'sys_time' || expression === 'sysTime') {
+    return dayjs().format('HH:mm:ss');
+  }
   const userStore = useUserStoreWithOut();
   let userInfo = userStore.getUserInfo;
   if (userInfo) {
@@ -497,12 +525,10 @@ export async function userExitChangeLoginTenantId(tenantId){
   let loginTenantId = getTenantId();
   userStore.setTenant(currentTenantId);
 
-  //update-begin---author:wangshuai---date:2023-11-07---for:【QQYUN-7005】退租户，判断退出的租户ID与当前租户ID一致，再刷新---
   //租户为空，说明没有租户了，需要刷新页面。或者当前租户和退出的租户一致则需要刷新浏览器
   if(!currentTenantId || tenantId == loginTenantId){
     window.location.reload();
   }
-  //update-end---author:wangshuai---date:2023-11-07---for:【QQYUN-7005】退租户，判断退出的租户ID与当前租户ID一致，再刷新---
 }
 
 /**
@@ -574,4 +600,182 @@ export function translateTitle(data) {
     });
   }
   return data;
+}
+
+/**
+ *
+ * 深度冻结对象
+ * @param obj Object or Array
+ */
+export function freezeDeep(obj: Recordable | Recordable[]) {
+  if (obj != null) {
+    if (Array.isArray(obj)) {
+      obj.forEach(item => freezeDeep(item))
+    } else if (typeof obj === 'object') {
+      Object.values(obj).forEach(value => {
+        freezeDeep(value)
+      })
+    }
+    Object.freeze(obj)
+  }
+  return obj
+}
+
+/**
+ * 获取父级名称
+ * 
+ * @param orgCode 当前部门的code
+ * @param label 当前默认显示的值
+ * @param depId depId
+ * @return 部门名称
+ */
+export async function getDepartPathNameByOrgCode(orgCode, label, depId){
+  if (orgCode) {
+    depId = "";
+  }
+  let result = await defHttp.get({ url: "/sys/sysDepart/getDepartPathNameByOrgCode", params:{ orgCode: orgCode, depId: depId } }, { isTransformResponse: false });
+  if (result.success) {
+    return result.result;
+  }
+  return label;
+}
+
+/**
+ * 获取部门路径名称
+ * @param title
+ * @param key 部门code或者部门id
+ * @param izOrgCode 是否是机构编码
+ */
+export function getDepartPathName(title,key,izOrgCode) {
+  if (departNamePath.value[key]) {
+    return departNamePath.value[key];
+  }
+  if(izOrgCode){
+    getDepartPathNameByOrgCode(key, title, "").then(result => {
+      departNamePath.value[key] = result;
+    });
+  }else{
+    getDepartPathNameByOrgCode("", title, key).then(result => {
+      departNamePath.value[key] = result;
+    });
+  }
+
+}
+
+/**
+ * 获取多个部门路径名称
+ * @param title
+ * @param id
+ */
+export function getMultiDepartPathName(title,id) {
+  if(!id || id.length === 0){
+    return '';
+  }
+  let postIds:any = "";
+  if(id instanceof Array){
+    postIds = id;
+  } else {
+    postIds = id.split(",")
+  }
+  let postNames = "";
+  postIds.forEach((postId)=>{
+    postNames += getDepartPathName(title,postId,false) + ",";
+  });
+  if(postNames.endsWith(",")){
+    postNames = postNames.substring(0,postNames.length - 1);
+  }
+  return postNames;
+}
+
+/**
+ * 获取部门名称 返回h
+ * @param departNamePath 部门路径
+ */
+export function getDepartName(departNamePath) {
+  if(departNamePath){
+    let names = departNamePath.split(",");
+    let textElements:any = [];
+    for (let i = 0; i < names.length; i++) {
+      textElements.push(h("p", { style: { marginBottom: '2px'} }, names[i]));
+    }
+    // 组合完整内容字符串用于title属性
+    const fullContent = names.join('\n');
+    return h("div",{
+      style: {
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        display: '-webkit-box',
+        WebkitLineClamp: 3,
+        WebkitBoxOrient: 'vertical',
+        lineHeight: '1.5em',
+        maxHeight: '4.5em',
+        width: '100%',
+        whiteSpace: 'normal'
+      },
+      // 鼠标悬停显示全部内容
+      title: fullContent
+    },textElements)
+  }
+  return departNamePath;
+}
+
+/**
+ * 获取文件表
+ * @param fileUrl
+ */
+export function getFileIcon(fileUrl) {
+  if(!fileUrl) {
+    return 'ant-design:file-outlined';
+  }
+  const suffix = fileUrl.substring(fileUrl.lastIndexOf('.') + 1).toLowerCase();
+  if(['xls','xlsx','csv'].includes(suffix)) {
+    return 'ant-design:file-excel-filled';
+  }
+  if(['doc','docx'].includes(suffix)) {
+    return 'ant-design:file-word-filled';
+  }
+  if(['pdf'].includes(suffix)) {
+    return 'ant-design:file-pdf-filled';
+  }
+  if(['ppt','pptx'].includes(suffix)) {
+    return 'ant-design:file-ppt-filled';
+  }
+  if(['txt'].includes(suffix)) {
+    return 'ant-design:file-text-filled';
+  }
+  if(['md'].includes(suffix)) {
+    return 'ant-design:file-markdown-filled';
+  }
+  return 'ant-design:file-unknown-filled';
+}
+
+/**
+ * 获取文件图标颜色
+ *
+ * @param fileUrl
+ */
+export function getFileIconColor(fileUrl) {
+  if(!fileUrl) {
+    return '#999';
+  }
+  const suffix = fileUrl.substring(fileUrl.lastIndexOf('.') + 1).toLowerCase();
+  if(['xls','xlsx','csv'].includes(suffix)) {
+    return '#52c41a';
+  }
+  if(['doc','docx'].includes(suffix)) {
+    return '#1890ff';
+  }
+  if(['pdf'].includes(suffix)) {
+    return '#ff4d4f';
+  }
+  if(['ppt','pptx'].includes(suffix)) {
+    return '#fa8c16';
+  }
+  if(['txt'].includes(suffix)) {
+    return '#666';
+  }
+  if(['md'].includes(suffix)) {
+    return '#000';
+  }
+  return '#999';
 }

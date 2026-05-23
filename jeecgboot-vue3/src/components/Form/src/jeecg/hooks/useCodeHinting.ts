@@ -39,9 +39,19 @@ export const useCodeHinting = (CodeMirror, keywords, language) => {
           // 查找.前面是否有定义的关键词
           const curLineCode = cm.getLine(cur.line);
           for (let i = 0, len = customKeywords.length; i < len; i++) {
-            const k = curLineCode.substring(-1, customKeywords[i].length);
+            const k = curLineCode.slice(-(customKeywords[i].length + 1), -1);
             if (customKeywords.includes(k)) {
               recordKeyword = k;
+              break;
+            }
+          }
+        } else {
+          // 查找单词前面是否有.this(.关键词)
+          const curLineCode = cm.getLine(cur.line);
+          for (let i = 0, len = customKeywords.length; i < len; i++) {
+            const k = curLineCode.slice(start - (customKeywords[i].length + 1), start);
+            if (k.substr(-1) === '.' && customKeywords.includes(k.replace('.', ''))) {
+              recordKeyword = k.replace('.', '');
               break;
             }
           }
@@ -99,7 +109,7 @@ export const useCodeHinting = (CodeMirror, keywords, language) => {
             from: CodeMirror.Pos(cur.line, start),
             to: CodeMirror.Pos(cur.line, end),
           });
-          // update-begin--author:liaozhiyang---date:20240429---for：【QQYUN-8865】js增强加上鼠标移入提示
+          // 代码逻辑说明: 【QQYUN-8865】js增强加上鼠标移入提示
           const item = currentKeywords[0];
           if (item?.desc) {
             setTimeout(() => {
@@ -116,7 +126,6 @@ export const useCodeHinting = (CodeMirror, keywords, language) => {
               }
             }, 0);
           }
-          // update-end--author:liaozhiyang---date:20240429---for：【QQYUN-8865】js增强加上鼠标移入提示
         } else {
         }
       }

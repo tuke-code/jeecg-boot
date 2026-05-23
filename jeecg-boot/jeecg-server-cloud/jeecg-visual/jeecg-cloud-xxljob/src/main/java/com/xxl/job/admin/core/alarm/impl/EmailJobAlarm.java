@@ -12,7 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Component;
 
-import javax.mail.internet.MimeMessage;
+import jakarta.mail.internet.MimeMessage;
 import java.text.MessageFormat;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -66,7 +66,7 @@ public class EmailJobAlarm implements JobAlarm {
                     MimeMessage mimeMessage = XxlJobAdminConfig.getAdminConfig().getMailSender().createMimeMessage();
 
                     MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true);
-                    helper.setFrom(XxlJobAdminConfig.getAdminConfig().getEmailUserName(), personal);
+                    helper.setFrom(XxlJobAdminConfig.getAdminConfig().getEmailFrom(), personal);
                     helper.setTo(email);
                     helper.setSubject(title);
                     helper.setText(content, true);

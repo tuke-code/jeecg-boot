@@ -17,7 +17,7 @@
             {{ t('component.table.settingColumnShow') }}
           </Checkbox>
 
-          <Checkbox v-model:checked="checkIndex" @change="handleIndexCheckChange">
+          <Checkbox :disabled="isTreeTable" v-model:checked="checkIndex" @change="handleIndexCheckChange">
             {{ t('component.table.settingIndexColumnShow') }}
           </Checkbox>
 
@@ -91,7 +91,7 @@
 </template>
 <script lang="ts">
   import type { BasicColumn, ColumnChangeParam } from '../../types/table';
-  import { defineComponent, ref, reactive, toRefs, watchEffect, nextTick, unref, computed } from 'vue';
+  import { defineComponent, ref, reactive, toRefs, watchEffect, nextTick, unref, computed, watch } from 'vue';
   import { Tooltip, Popover, Checkbox, Divider } from 'ant-design-vue';
   import type { CheckboxChangeEvent } from 'ant-design-vue/lib/checkbox/interface';
   import { SettingOutlined, DragOutlined } from '@ant-design/icons-vue';
@@ -107,6 +107,7 @@
   import { cloneDeep, omit } from 'lodash-es';
   import Sortablejs from 'sortablejs';
   import type Sortable from 'sortablejs';
+  import { useLocaleStoreWithOut } from '/@/store/modules/locale';
 
   interface State {
     checkAll: boolean;
@@ -142,11 +143,13 @@
     setup(props, { emit, attrs }) {
       const { t } = useI18n();
       const table = useTableContext();
+      // 代码逻辑说明: 【issues/8301】树形表格序号列禁用
+      const isTreeTable = computed(() => table.getBindValues.value.isTreeTable);
       const popoverVisible = ref(false);
-      // update-begin--author:sunjianlei---date:20221101---for: 修复第一次进入时列表配置不能拖拽
       // nextTick(() => popoverVisible.value = false);
-      // update-end--author:sunjianlei---date:20221101---for: 修复第一次进入时列表配置不能拖拽
       const defaultRowSelection = omit(table.getRowSelection(), 'selectedRowKeys');
+      // 代码逻辑说明: 【issues/8529】setColumns后列配置没联动更新
+      const getColumnsRef = table.getColumnsRef();
       let inited = false;
 
       const cachePlainOptions = ref<Options[]>([]);
@@ -155,6 +158,10 @@
       const plainSortOptions = ref<Options[]>([]);
 
       const columnListRef = ref<ComponentRef>(null);
+
+      const restAfterOptions = {
+        value: null,
+      };
 
       const state = reactive<State>({
         checkAll: true,
@@ -181,9 +188,9 @@
 
       let sortable: Sortable;
       const sortableOrder = ref<string[]>();
-
+      const localeStore = useLocaleStoreWithOut();
       // 列表字段配置缓存
-      const { saveSetting, resetSetting } = useColumnsCache(
+      const { saveSetting, resetSetting, getCache } = useColumnsCache(
         {
           state,
           popoverVisible,
@@ -191,6 +198,7 @@
           plainSortOptions,
           sortableOrder,
           checkIndex,
+          restAfterOptions,
         },
         setColumns,
         handleColumnFixed
@@ -198,8 +206,7 @@
 
       watchEffect(() => {
         setTimeout(() => {
-          const columns = table.getColumns();
-          if (columns.length && !state.isInit) {
+          if (!state.isInit) {
             init();
           }
         }, 0);
@@ -210,10 +217,25 @@
         checkIndex.value = !!values.showIndexColumn;
         checkSelect.value = !!values.rowSelection;
       });
-
+      // 代码逻辑说明: 【issues/6908】多语言无刷新切换时，BasicColumn和FormSchema里面的值不能正常切换
+      watch([localeStore], () => {
+        const columns = getColumns();
+        plainOptions.value = columns;
+        plainSortOptions.value = columns;
+        cachePlainOptions.value = columns;
+      });
+      // 代码逻辑说明: 【issues/8529】setColumns将原本隐藏的列展示后，列配置里却没有勾选该列
+      watch([getColumnsRef], () => {
+        init();
+      });
       function getColumns() {
         const ret: Options[] = [];
-        table.getColumns({ ignoreIndex: true, ignoreAction: true }).forEach((item) => {
+        // 代码逻辑说明: 【issues/7996】表格列组件取消所有或者只勾选中间，显示非预期
+        let t = table.getColumns({ ignoreIndex: true, ignoreAction: true, ignoreAuth: true, ignoreIfShow: true });
+        if (!t.length) {
+          t = table.getCacheColumns();
+        }
+        t.forEach((item) => {
           ret.push({
             label: (item.title as string) || (item.customTitle as string),
             value: (item.dataIndex || item.title) as string,
@@ -223,11 +245,11 @@
         return ret;
       }
 
-      function init() {
+      async function init() {
         const columns = getColumns();
 
         const checkList = table
-          .getColumns({ ignoreAction: true })
+          .getColumns({ ignoreAction: true, ignoreIndex: true, ignoreAuth: true, ignoreIfShow: true })
           .map((item) => {
             if (item.defaultHidden) {
               return '';
@@ -235,11 +257,19 @@
             return item.dataIndex || item.title;
           })
           .filter(Boolean) as string[];
-
+        // 代码逻辑说明: 【issues/7996】表格列组件取消所有或者只勾选中间，显示非预期
+        const { sortedList = [] } = getCache() || {};
+        await nextTick();
         if (!plainOptions.value.length) {
-          plainOptions.value = columns;
-          plainSortOptions.value = columns;
-          cachePlainOptions.value = columns;
+          let tmp = columns;
+          if (sortedList?.length) {
+            tmp = columns.sort((prev, next) => {
+              return sortedList.indexOf(prev.value) - sortedList.indexOf(next.value);
+            });
+          }
+          plainOptions.value = tmp;
+          plainSortOptions.value = tmp;
+          cachePlainOptions.value = tmp;
           state.defaultCheckList = checkList;
         } else {
           // const fixedColumns = columns.filter((item) =>
@@ -252,9 +282,17 @@
               item.fixed = findItem.fixed;
             }
           });
+          // 代码逻辑说明: 【issues/7996】表格列组件取消所有或者只勾选中间，显示非预期
+          if (sortedList?.length) {
+            plainOptions.value.sort((prev, next) => {
+              return sortedList.indexOf(prev.value) - sortedList.indexOf(next.value);
+            });
+          }
         }
         state.isInit = true;
         state.checkedList = checkList;
+        // 代码逻辑说明: 【TV360X-105】列展示设置问题[列展示如果存在未勾选的列，保存并刷新后，列展示复选框样式会错乱]
+        state.checkAll = columns.length === checkList.length;
       }
 
       // checkAll change
@@ -272,7 +310,7 @@
       const indeterminate = computed(() => {
         const len = plainOptions.value.length;
         let checkedLen = state.checkedList.length;
-        unref(checkIndex) && checkedLen--;
+        // unref(checkIndex) && checkedLen--;
         return checkedLen > 0 && checkedLen < len;
       });
 
@@ -289,31 +327,34 @@
 
       // reset columns
       function reset() {
-        // state.checkedList = [...state.defaultCheckList];
-        // update-begin--author:liaozhiyang---date:20231103---for：【issues/825】tabel的列设置隐藏列保存后切换路由问题[重置没勾选]
-        state.checkedList = table
-          .getColumns({ ignoreAction: true })
-          .map((item) => {
-            return item.dataIndex || item.title;
-          })
-          .filter(Boolean) as string[];
-        // update-end--author:liaozhiyang---date:20231103---for：【issues/825】tabel的列设置隐藏列保存后切换路由问题[重置没勾选]
-        state.checkAll = true;
-        plainOptions.value = unref(cachePlainOptions);
-        plainSortOptions.value = unref(cachePlainOptions);
+        // 代码逻辑说明: 【TV360X-105】列展示设置问题[需要重置两次才回到初始状态]
         setColumns(table.getCacheColumns());
-        if (sortableOrder.value) {
-          sortable.sort(sortableOrder.value);
-        }
-        resetSetting();
+        setTimeout(() => {
+          const columns = getColumns();
+          // state.checkedList = [...state.defaultCheckList];
+          // 代码逻辑说明: 【issues/825】tabel的列设置隐藏列保存后切换路由问题[重置没勾选]
+          state.checkedList = table
+            .getColumns({ ignoreAction: true, ignoreAuth: true, ignoreIfShow: true })
+            .map((item) => {
+              return item.dataIndex || item.title;
+            })
+            .filter(Boolean) as string[];
+          state.checkAll = true;
+          plainOptions.value = unref(cachePlainOptions);
+          plainSortOptions.value = unref(cachePlainOptions);
+          restAfterOptions.value = columns;
+          if (sortableOrder.value) {
+            sortable.sort(sortableOrder.value);
+          }
+          resetSetting();
+        }, 100);
       }
 
       // Open the pop-up window for drag and drop initialization
       function handleVisibleChange() {
         if (inited) return;
-        // update-begin--author:liaozhiyang---date:20240529---for：【TV360X-254】列设置闪现及苹果浏览器弹窗过长
+        // 代码逻辑说明: 【TV360X-254】列设置闪现及苹果浏览器弹窗过长
         setTimeout(() => {
-          // update-begin--author:liaozhiyang---date:20240529---for：【TV360X-254】列设置闪现及苹果浏览器弹窗过长
           const columnListEl = unref(columnListRef);
           if (!columnListEl) return;
           const el = columnListEl.$el as any;
@@ -341,15 +382,14 @@
               }
 
               plainSortOptions.value = columns;
-              // update-begin--author:liaozhiyang---date:20230904---for：【QQYUN-6424】table字段列表设置不显示后，再拖拽字段顺序，原本不显示的，又显示了
-              // update-begin--author:liaozhiyang---date:20240522---for：【TV360X-108】刷新后勾选之前未勾选的字段拖拽之后该字段对应的表格列消失了
+              // 代码逻辑说明: 【TV360X-108】刷新后勾选之前未勾选的字段拖拽之后该字段对应的表格列消失了
               const cols = columns.map((item) => item.value);
               const arr = cols.filter((cItem) => state.checkedList.find((lItem) => lItem === cItem));
               setColumns(arr);
               // 最开始的代码
               // setColumns(columns);
-              // update-end--author:liaozhiyang---date:20240522---for：【TV360X-108】刷新后勾选之前未勾选的字段拖拽之后该字段对应的表格列消失了
-              // update-end--author:liaozhiyang---date:20230904---for：【QQYUN-6424】table字段列表设置不显示后，再拖拽字段顺序，原本不显示的，又显示了
+              // 代码逻辑说明: 【TV360X-105】列展示设置问题[重置之后保存的顺序还是上次的]
+              restAfterOptions.value = null;
             },
           });
           // 记录原始 order 序列
@@ -428,6 +468,7 @@
         defaultRowSelection,
         handleColumnFixed,
         getPopupContainer,
+        isTreeTable,
       };
     },
   });
@@ -510,15 +551,13 @@
       }
 
       .ant-checkbox-group {
-        // update-begin--author:liaozhiyang---date:20240118---for：【QQYUN-7887】表格列设置宽度过长
         // width: 100%;
         min-width: 260px;
         max-width: min-content;
-        // update-end--author:liaozhiyang---date:20240118---for：【QQYUN-7887】表格列设置宽度过长
         // flex-wrap: wrap;
       }
 
-      // update-begin--author:liaozhiyang---date:20240529---for：【TV360X-254】列设置闪现及苹果浏览器弹窗过长
+      // 代码逻辑说明: 【TV360X-254】列设置闪现及苹果浏览器弹窗过长
       &.ant-popover,
       .ant-popover-content,
       .ant-popover-inner,
@@ -527,7 +566,6 @@
       .scrollbar__wrap {
         max-width: min-content;
       }
-      // update-end--author:liaozhiyang---date:20240529---for：【TV360X-254】列设置闪现及苹果浏览器弹窗过长
       .scrollbar {
         height: 220px;
       }

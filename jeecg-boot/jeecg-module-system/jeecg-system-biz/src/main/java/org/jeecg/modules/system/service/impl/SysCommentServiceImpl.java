@@ -15,6 +15,7 @@ import org.jeecg.common.system.api.ISysBaseAPI;
 import org.jeecg.common.system.vo.SysFilesModel;
 import org.jeecg.common.util.CommonUtils;
 import org.jeecg.common.util.RedisUtil;
+import org.jeecg.common.util.filter.SsrfFileTypeFilter;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.system.entity.SysComment;
 import org.jeecg.modules.system.entity.SysFormFile;
@@ -26,13 +27,14 @@ import org.jeecg.modules.system.vo.SysCommentVO;
 import org.jeecg.modules.system.vo.UserAvatar;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.FileCopyUtils;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.multipart.MultipartHttpServletRequest;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
@@ -118,28 +120,24 @@ public class SysCommentServiceImpl extends ServiceImpl<SysCommentMapper, SysComm
     @Transactional(rollbackFor = Exception.class)
     @Override
     public void saveOneFileComment(HttpServletRequest request) {
-        
-        //update-begin-author:taoyan date:2023-6-12 for: QQYUN-4310【文件】从文件库选择文件功能未做
         String existFileId = request.getParameter("fileId");
         if(oConvertUtils.isEmpty(existFileId)){
             String savePath = "";
+            // 获取业务路径
             String bizPath = request.getParameter("biz");
-            //LOWCOD-2580 sys/common/upload接口存在任意文件上传漏洞
-            if (oConvertUtils.isNotEmpty(bizPath)) {
-                if (bizPath.contains(SymbolConstant.SPOT_SINGLE_SLASH) || bizPath.contains(SymbolConstant.SPOT_DOUBLE_BACKSLASH)) {
-                    throw new JeecgBootException("上传目录bizPath，格式非法！");
-                }
-            }
-            MultipartHttpServletRequest multipartRequest = (MultipartHttpServletRequest) request;
             // 获取上传文件对象
+            MultipartHttpServletRequest multipartRequest = (MultipartHttpServletRequest) request;
             MultipartFile file = multipartRequest.getFile("file");
+
+            // 文件安全校验，防止上传漏洞文件
+            try {
+                SsrfFileTypeFilter.checkUploadFileType(file, bizPath);
+            } catch (Exception e) {
+                throw new JeecgBootException(e);
+            }
+
             if (oConvertUtils.isEmpty(bizPath)) {
-                if (CommonConstant.UPLOAD_TYPE_OSS.equals(uploadType)) {
-                    //未指定目录，则用阿里云默认目录 upload
-                    bizPath = "upload";
-                } else {
-                    bizPath = "";
-                }
+                bizPath = CommonConstant.UPLOAD_TYPE_OSS.equals(uploadType) ? "upload" : "";
             }
             if (CommonConstant.UPLOAD_TYPE_LOCAL.equals(uploadType)) {
                 savePath = this.uploadLocal(file, bizPath);
@@ -199,7 +197,6 @@ public class SysCommentServiceImpl extends ServiceImpl<SysCommentMapper, SysComm
                 sysFormFileMapper.insert(sysFormFile);
 //            }
         }
-        //update-end-author:taoyan date:2023-6-12 for: QQYUN-4310【文件】从文件库选择文件功能未做
     }
 
     /**
@@ -273,20 +270,34 @@ public class SysCommentServiceImpl extends ServiceImpl<SysCommentMapper, SysComm
                 md.setFromUser("system");
                 md.setType(MessageTypeEnum.XT.getType());
 
-                // update-begin-author:taoyan date:2023-5-10 for: QQYUN-4744【系统通知】6、系统通知@人后，对方看不到是哪个表单@的，没有超链接
+                // 代码逻辑说明: QQYUN-4744【系统通知】6、系统通知@人后，对方看不到是哪个表单@的，没有超链接
                 String tableName = sysComment.getTableName();
                 String prefix = "desform:";
-                if(tableName!=null && tableName.startsWith(prefix)){
-                    Map<String, Object> data = new HashMap<>();
-                    data.put(CommonConstant.NOTICE_MSG_BUS_TYPE, "comment");
-                    JSONObject params = new JSONObject();
-                    params.put("code", tableName.substring(prefix.length()));
-                    params.put("dataId", sysComment.getTableDataId());
-                    params.put("type", "designForm");
-                    data.put(CommonConstant.NOTICE_MSG_SUMMARY, params);
-                    md.setData(data);
+                if (tableName != null) {
+                    // 表单设计器
+                    if (tableName.startsWith(prefix)) {
+                        Map<String, Object> data = new HashMap<>();
+                        data.put(CommonConstant.NOTICE_MSG_BUS_TYPE, "comment");
+                        JSONObject params = new JSONObject();
+                        params.put("code", tableName.substring(prefix.length()));
+                        params.put("dataId", sysComment.getTableDataId());
+                        params.put("type", "designForm");
+                        data.put(CommonConstant.NOTICE_MSG_SUMMARY, params);
+                        md.setData(data);
+                    }
+                    // Online表单，判断是否携带id
+                    else if (oConvertUtils.isNotEmpty(sysComment.getTableId())) {
+                        Map<String, Object> data = new HashMap<>();
+                        data.put(CommonConstant.NOTICE_MSG_BUS_TYPE, "comment");
+                        JSONObject params = new JSONObject();
+                        params.put("code", tableName);
+                        params.put("formId", sysComment.getTableId());
+                        params.put("dataId", sysComment.getTableDataId());
+                        params.put("type", "cgform");
+                        data.put(CommonConstant.NOTICE_MSG_SUMMARY, params);
+                        md.setData(data);
+                    }
                 }
-                // update-end-author:taoyan date:2023-5-10 for: QQYUN-4744【系统通知】6、系统通知@人后，对方看不到是哪个表单@的，没有超链接
                 
                 sysBaseApi.sendTemplateMessage(md);
             }
@@ -332,14 +343,24 @@ public class SysCommentServiceImpl extends ServiceImpl<SysCommentMapper, SysComm
      * @return
      */
     private String uploadLocal(MultipartFile mf, String bizPath) {
-        //LOWCOD-2580 sys/common/upload接口存在任意文件上传漏洞
-        if (oConvertUtils.isNotEmpty(bizPath) && (bizPath.contains("../") || bizPath.contains("..\\"))) {
-            throw new JeecgBootException("上传目录bizPath，格式非法！");
+        try {
+            // 文件安全校验，防止上传漏洞文件
+            SsrfFileTypeFilter.checkUploadFileType(mf, bizPath);
+        } catch (Exception e) {
+            throw new JeecgBootException(e);
         }
+        
         try {
             String ctxPath = uploadpath;
             String fileName = null;
-            File file = new File(ctxPath + File.separator + bizPath + File.separator);
+            //update-begin---author:liusq ---date:2026-03-30  for：【issues/9427】修复uploadLocal bizPath路径遍历漏洞(CWE-22)-----------
+            // 路径遍历校验：规范化后确保目标目录在uploadpath内
+            File uploadDir = new File(ctxPath).getCanonicalFile();
+            File file = new File(ctxPath + File.separator + bizPath + File.separator).getCanonicalFile();
+            if (!file.toPath().startsWith(uploadDir.toPath())) {
+                throw new JeecgBootException("非法业务路径，禁止访问上传目录之外的路径: " + bizPath);
+            }
+            //update-end---author:liusq ---date:2026-03-30  for：【issues/9427】修复uploadLocal bizPath路径遍历漏洞(CWE-22)-----------
             if (!file.exists()) {
                 file.mkdirs();// 创建文件根目录
             }

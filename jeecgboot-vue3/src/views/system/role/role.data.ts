@@ -56,8 +56,16 @@ export const searchUserFormSchema: FormSchema[] = [
   {
     field: 'username',
     label: '用户账号',
-    component: 'Input',
-    colProps: { span: 12 },
+    component: 'JInput',
+    colProps: { span: 8 },
+    labelWidth: 74,
+  },
+  {
+    field: 'realname',
+    label: '用户名称',
+    component: 'JInput',
+    colProps: { span: 8 },
+    labelWidth: 74,
   },
 ];
 

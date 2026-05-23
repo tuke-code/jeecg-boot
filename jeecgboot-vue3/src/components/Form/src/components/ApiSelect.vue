@@ -1,5 +1,14 @@
 <template>
-  <Select @dropdownVisibleChange="handleFetch" v-bind="attrs_" @change="handleChange" :options="getOptions" v-model:value="state">
+  <Select
+    v-bind="attrs_"
+    v-model:value="state"
+    :options="getOptions"
+    show-search
+    :filter-option="filterOption"
+    @change="handleChange"
+    @dropdownVisibleChange="handleFetch"
+    @popupScroll="handlePopupScroll"
+  >
     <template #[item]="data" v-for="item in Object.keys($slots)">
       <slot :name="item" v-bind="data || {}"></slot>
     </template>
@@ -24,9 +33,10 @@
   import { LoadingOutlined } from '@ant-design/icons-vue';
   import { useI18n } from '/@/hooks/web/useI18n';
   import { propTypes } from '/@/utils/propTypes';
+  import { isNumber } from '/@/utils/is';
 
   type OptionsItem = { label: string; value: string; disabled?: boolean };
-
+  //文档 https://help.jeecg.com/ui/apiSelect#pageconfig%E5%8F%82%E6%95%B0%E9%85%8D%E7%BD%AE
   export default defineComponent({
     name: 'ApiSelect',
     components: {
@@ -35,7 +45,7 @@
     },
     inheritAttrs: false,
     props: {
-      value: [Array, Object, String, Number],
+      value: [Array, String, Number],
       numberToString: propTypes.bool,
       api: {
         type: Function as PropType<(arg?: Recordable) => Promise<OptionsItem[]>>,
@@ -45,6 +55,11 @@
       params: {
         type: Object as PropType<Recordable>,
         default: () => ({}),
+      },
+      //分页配置
+      pageConfig: {
+        type: Object as PropType<Recordable>,
+        default: () => ({ isPage: false }),
       },
       // support xxx.xxx.xx
       resultField: propTypes.string.def(''),
@@ -60,10 +75,18 @@
       const emitData = ref<any[]>([]);
       const attrs = useAttrs();
       const { t } = useI18n();
-
+      // 代码逻辑说明: 【QQYUN-11831】ApiSelect 分页下拉方案 #7883
+      const hasMore = ref(true);
+      const pagination = ref({
+        pageNo: 1,
+        pageSize: 10,
+        total: 0,
+      });
+      const defPageConfig = { isPage: false, pageField: 'pageNo', pageSizeField: 'pageSize', totalField: 'total', listField: 'records' };
+      // update-end--author:liusq---date:20250407---for：【QQYUN-11831】ApiSelect 分页下拉方案 #7883
       // Embedded in the form, just use the hook binding to perform form verification
       const [state, setState] = useRuleFormItem(props, 'value', 'change', emitData);
-      // update-begin--author:liaozhiyang---date:20230830---for：【QQYUN-6308】解决警告
+      // 代码逻辑说明: 【QQYUN-6308】解决警告
       let vModalValue: any;
       const attrs_ = computed(() => {
         let obj: any = unref(attrs) || {};
@@ -71,9 +94,9 @@
           vModalValue = obj['onUpdate:value'];
           delete obj['onUpdate:value'];
         }
-        // update-begin--author:liaozhiyang---date:20231017---for：【issues/5467】ApiSelect修复覆盖了用户传递的方法
+        // 代码逻辑说明: 【issues/5467】ApiSelect修复覆盖了用户传递的方法
         if (obj['filterOption'] === undefined) {
-          // update-begin--author:liaozhiyang---date:20230904---for：【issues/5305】无法按照预期进行搜索
+          // 代码逻辑说明: 【issues/5305】无法按照预期进行搜索
           obj['filterOption'] = (inputValue, option) => {
             if (typeof option['label'] === 'string') {
               return option['label'].toLowerCase().indexOf(inputValue.toLowerCase()) != -1;
@@ -81,19 +104,19 @@
               return true;
             }
           };
-          // update-end--author:liaozhiyang---date:20230904---for：【issues/5305】无法按照预期进行搜索
         }
-        // update-end--author:liaozhiyang---date:20231017---for：【issues/5467】ApiSelect修复覆盖了用户传递的方法
         return obj;
       });
-      // update-begin--author:liaozhiyang---date:20230830---for：【QQYUN-6308】解决警告
+      // 代码逻辑说明: 【QQYUN-6308】解决警告
       const getOptions = computed(() => {
         const { labelField, valueField, numberToString } = props;
         return unref(options).reduce((prev, next: Recordable) => {
           if (next) {
             const value = next[valueField];
             prev.push({
-              ...omit(next, [labelField, valueField]),
+              // update-begin--author:liaozhiyang---date:20260226---for:【issues/9326】ApiSelect组件，返回数据中包含 options 这个名称导致组件渲染失败
+              ...omit(next, [labelField, valueField, 'options']),
+              // update-end--author:liaozhiyang---date:20260226---for:【issues/9326】ApiSelect组件，返回数据中包含 options 这个名称导致组件渲染失败
               label: next[labelField],
               value: numberToString ? `${value}` : value,
             });
@@ -101,9 +124,21 @@
           return prev;
         }, [] as OptionsItem[]);
       });
-      // update-begin--author:liaozhiyang---date:20240509---for：【issues/6191】apiSelect多次请求
-      props.immediate && fetch();
-      // update-end--author:liaozhiyang---date:20240509---for：【issues/6191】apiSelect多次请求
+      // 代码逻辑说明: 【issues/8527】apiSelect分页加载重复请求
+      watch(
+        () => props.immediate,
+        () => {
+          props.immediate && fetch();
+        },
+        { immediate: true }
+      );
+      watch(
+        () => [props.api, props.pageConfig, props.resultField, props.params],
+        () => {
+          props.immediate && fetch();
+        },
+        { deep: true }
+      );
 
       watch(
         () => props.params,
@@ -112,45 +147,68 @@
         },
         { deep: true }
       );
-     //监听数值修改，查询数据
+      //监听数值修改，查询数据
       watchEffect(() => {
         props.value && handleFetch();
       });
-
+      /**
+       * 筛选流程
+       * @param input
+       * @param option
+       */
+      const filterOption = (input: string, option: any) => {
+        return option.value.toLowerCase().indexOf(input.toLowerCase()) >= 0 || option.label.indexOf(input) >= 0;
+      };
       async function fetch() {
         const api = props.api;
         if (!api || !isFunction(api)) return;
-        options.value = [];
+        // 代码逻辑说明: 【QQYUN-11831】ApiSelect 分页下拉方案 #7883
+        if (!props.pageConfig.isPage || pagination.value.pageNo == 1) {
+          options.value = [];
+        }
         try {
           loading.value = true;
-          const res = await api(props.params);
-          if (Array.isArray(res)) {
-            options.value = res;
-            emitChange();
-            return;
-          }
-          if (props.resultField) {
-            options.value = get(res, props.resultField) || [];
+          let { isPage, pageField, pageSizeField, totalField, listField } = { ...defPageConfig, ...props.pageConfig };
+          let params = isPage
+            ? { ...props.params, [pageField]: pagination.value.pageNo, [pageSizeField]: pagination.value.pageSize }
+            : { ...props.params };
+          const res = await api(params);
+          if (isPage) {
+            // 代码逻辑说明: 【QQYUN-11831】ApiSelect 分页下拉方案 #7883
+            options.value = [...options.value, ...res[listField]];
+            pagination.value.total = res[totalField] || 0;
+            hasMore.value = res[totalField] ? options.value.length < res[totalField] : res[listField] < pagination.value.pageSize;
+          } else {
+            if (Array.isArray(res)) {
+              options.value = res;
+              emitChange();
+              return;
+            }
+            if (props.resultField) {
+              options.value = get(res, props.resultField) || [];
+            }
           }
           emitChange();
         } catch (error) {
           console.warn(error);
         } finally {
           loading.value = false;
-          //--@updateBy-begin----author:liusq---date:20210914------for:判断选择模式，multiple多选情况下的value值空的情况下需要设置为数组------
-          unref(attrs).mode == 'multiple' && !Array.isArray(unref(state)) && setState([]);
-          //--@updateBy-end----author:liusq---date:20210914------for:判断选择模式，multiple多选情况下的value值空的情况下需要设置为数组------
-
-          //update-begin---author:wangshuai ---date:20230505  for：初始化value值，如果是多选字符串的情况下显示不出来------------
+          ['multiple', 'tags'].includes(unref(attrs).mode) && !Array.isArray(unref(state)) && setState([]);
           initValue();
-          //update-end---author:wangshuai ---date:20230505  for：初始化value值，如果是多选字符串的情况下显示不出来------------
         }
       }
 
       function initValue() {
         let value = props.value;
-        if (value && typeof value === 'string' && value != 'null' && value != 'undefined') {
-          state.value = value.split(',');
+        // 代码逻辑说明: 【issues/8037】初始化值单选的值被错误地写入数组值
+        if (['multiple', 'tags'].includes(unref(attrs).mode)) {
+          if (value && typeof value === 'string' && value != 'null' && value != 'undefined') {
+            state.value = value.split(',');
+          } else if (isNumber(value)) {
+            state.value = [value];
+          }
+        } else {
+          state.value = value;
         }
       }
 
@@ -169,8 +227,16 @@
         vModalValue && vModalValue(_);
         emitData.value = args;
       }
-
-      return { state, attrs_, attrs, getOptions, loading, t, handleFetch, handleChange };
+      // 滚动加载更多
+      function handlePopupScroll(e) {
+        const { scrollTop, scrollHeight, clientHeight } = e.target;
+        const isNearBottom = scrollHeight - scrollTop <= clientHeight + 20;
+        if (props.pageConfig.isPage && isNearBottom && hasMore.value && !loading.value) {
+          pagination.value.pageNo += 1;
+          fetch();
+        }
+      }
+      return { state, attrs_, attrs, getOptions, loading, t, handleFetch, handleChange, handlePopupScroll,filterOption };
     },
   });
 </script>

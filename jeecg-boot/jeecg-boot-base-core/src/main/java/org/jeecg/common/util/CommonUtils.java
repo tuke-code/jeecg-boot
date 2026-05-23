@@ -19,12 +19,15 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.util.FileCopyUtils;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import javax.sql.DataSource;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
@@ -55,10 +58,23 @@ public class CommonUtils {
     public static String uploadOnlineImage(byte[] data,String basePath,String bizPath,String uploadType){
         String dbPath = null;
         String fileName = "image" + Math.round(Math.random() * 100000000000L);
-        fileName += "." + PoiPublicUtil.getFileExtendName(data);
+        //update-begin---author:wangshuai---date:2026-01-08---for:【QQYUN-14535】ai生成图片的后缀不一致的，导致不展示---
+        fileName += "." + PoiPublicUtil.getFileExtendName(data).toLowerCase();
+        //update-end---author:wangshuai---date:2026-01-08---for:【QQYUN-14535】ai生成图片的后缀不一致的，导致不展示---
         try {
             if(CommonConstant.UPLOAD_TYPE_LOCAL.equals(uploadType)){
-                File file = new File(basePath + File.separator + bizPath + File.separator );
+                //update-begin---author:wangshuai---date:2026-03-30---for:【issues/9435】uploadOnlineImage路径遍历漏洞修复---
+                // 1. 使用已有的路径遍历检查
+                SsrfFileTypeFilter.checkPathTraversal(bizPath);
+                // 2. 标准化路径并校验是否在basePath范围内
+                Path root = Paths.get(basePath).toAbsolutePath().normalize();
+                Path targetDir = root.resolve(bizPath).toAbsolutePath().normalize();
+                if (!targetDir.startsWith(root)) {
+                    log.error("检测到路径遍历攻击！非法 bizPath: {}", bizPath);
+                    throw new SecurityException("Illegal access to path outside of base directory.");
+                }
+                File file = targetDir.toFile();
+                //update-end---author:wangshuai---date:2026-03-30---for:【issues/9435】uploadOnlineImage路径遍历漏洞修复---
                 if (!file.exists()) {
                     file.mkdirs();// 创建文件根目录
                 }
@@ -152,17 +168,28 @@ public class CommonUtils {
      */
     public static String uploadLocal(MultipartFile mf,String bizPath,String uploadpath){
         try {
-            //update-begin-author:liusq date:20210809 for: 过滤上传文件类型
-            SsrfFileTypeFilter.checkUploadFileType(mf);
-            //update-end-author:liusq date:20210809 for: 过滤上传文件类型
+            // 文件安全校验，防止上传漏洞文件
+            SsrfFileTypeFilter.checkUploadFileType(mf, bizPath);
+            
             String fileName = null;
-            File file = new File(uploadpath + File.separator + bizPath + File.separator );
+            //update-begin---author:liusq ---date:2026-03-30  for：【issues/9428】修复uploadLocal bizPath路径遍历漏洞(CWE-22)-----------
+            // 路径遍历校验：规范化后确保目标目录在uploadpath内
+            File uploadDir = new File(uploadpath).getCanonicalFile();
+            File file = new File(uploadpath + File.separator + bizPath + File.separator).getCanonicalFile();
+            if (!file.toPath().startsWith(uploadDir.toPath())) {
+                throw new JeecgBootException("非法业务路径，禁止访问上传目录之外的路径: " + bizPath);
+            }
+            //update-end---author:liusq ---date:2026-03-30  for：【issues/9428】修复uploadLocal bizPath路径遍历漏洞(CWE-22)-----------
             if (!file.exists()) {
                 // 创建文件根目录
                 file.mkdirs();
             }
             // 获取文件名
             String orgName = mf.getOriginalFilename();
+            // 无中文情况下进行转码
+            if (orgName != null && !CommonUtils.ifContainChinese(orgName)) {
+                orgName = new String(orgName.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
+            }
             orgName = CommonUtils.getFileName(orgName);
             if(orgName.indexOf(SymbolConstant.SPOT)!=-1){
                 fileName = orgName.substring(0, orgName.lastIndexOf(".")) + "_" + System.currentTimeMillis() + orgName.substring(orgName.lastIndexOf("."));
@@ -191,8 +218,14 @@ public class CommonUtils {
     }
 
     /**
-     * 统一全局上传 带桶
-     * @Return: java.lang.String
+     * 统一全局上传（支持自定义桶）
+     * 根据 uploadType 自动选择 MinIO 或 阿里云OSS 进行文件上传
+     *
+     * @param file         待上传的文件
+     * @param bizPath      业务路径，作为文件存储的目录前缀（如 "upload/images"）
+     * @param uploadType   上传方式：{@link CommonConstant#UPLOAD_TYPE_MINIO} 使用MinIO，其他使用阿里云OSS
+     * @param customBucket 自定义桶名称，为空则使用各存储服务的默认桶
+     * @return 文件访问URL，上传失败返回空字符串
      */
     public static String upload(MultipartFile file, String bizPath, String uploadType, String customBucket) {
         String url = "";
@@ -242,6 +275,10 @@ public class CommonUtils {
         try {
             DataSource dataSource = SpringContextUtils.getApplicationContext().getBean(DataSource.class);
             dbTypeEnum = JdbcUtils.getDbType(dataSource.getConnection().getMetaData().getURL());
+            //【采用SQL_SERVER2005引擎】QQYUN-13298 解决升级mybatisPlus后SqlServer分页使用OFFSET，无排序字段报错问题
+            if (dbTypeEnum == DbType.SQL_SERVER) {
+                dbTypeEnum = DbType.SQL_SERVER2005;
+            }
             return dbTypeEnum;
         } catch (SQLException e) {
             log.warn(e.getMessage(), e);
@@ -357,7 +394,7 @@ public class CommonUtils {
         }else{
             baseDomainPath = scheme + "://" + serverName + ":" + serverPort + contextPath ;
         }
-        log.debug("-----Common getBaseUrl----- : " + baseDomainPath);
+        log.debug("-----获取当前服务 BaseUrl----- : " + baseDomainPath);
         return baseDomainPath;
     }
 

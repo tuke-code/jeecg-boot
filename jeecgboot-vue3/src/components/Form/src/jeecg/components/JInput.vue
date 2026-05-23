@@ -17,18 +17,18 @@
       type: propTypes.string.def(JInputTypeEnum.JINPUT_QUERY_LIKE),
       placeholder: propTypes.string.def(''),
       trim: propTypes.bool.def(false),
+      class: propTypes.string,
+      style: propTypes.object,
     },
     emits: ['change', 'update:value'],
     setup(props, { emit }) {
       const attrs = useAttrs();
       //表单值
       const showText = ref('');
-      // update-begin--author:liaozhiyang---date:20231026---for：【issues/803】JIput updateSchema不生效
       //绑定属性
       const getBindValue = computed(() => {
         return omit(Object.assign({}, unref(props), unref(attrs)), ['value']);
       });
-      // update-end--author:liaozhiyang---date:20231026---for：【issues/803】JIput updateSchema不生效
       //监听类型变化
       watch(
         () => props.type,

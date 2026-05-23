@@ -38,6 +38,8 @@ interface OnlineColumn {
   dbType?:string;
   //他表字段用
   linkField?:string;
+  fieldExtendJson?:string
+  resizable?: boolean;
 }
 
 export { OnlineColumn, HrefSlots };

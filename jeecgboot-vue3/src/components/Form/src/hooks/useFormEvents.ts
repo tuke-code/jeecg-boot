@@ -19,6 +19,25 @@ interface UseFormActionContext {
   schemaRef: Ref<FormSchema[]>;
   handleFormValues: Fn;
 }
+
+function mergeComponentProps(srcProps: any, targetProps: any) {
+  if (targetProps == undefined) return srcProps;
+  if (srcProps == undefined) return targetProps;
+  if (isObject(srcProps) && isObject(targetProps)) {
+    return deepMerge(cloneDeep(srcProps), targetProps);
+  }
+  if (isFunction(srcProps) && isObject(targetProps)) {
+    return (ctx: any) => ({ ...(srcProps(ctx) ?? {}), ...targetProps });
+  }
+  if (isObject(srcProps) && isFunction(targetProps)) {
+    return (ctx: any) => ({ ...srcProps, ...(targetProps(ctx) ?? {}) });
+  }
+  if (isFunction(srcProps) && isFunction(targetProps)) {
+    return (ctx: any) => ({ ...(srcProps(ctx) ?? {}), ...(targetProps(ctx) ?? {}) });
+  }
+  return targetProps;
+}
+
 export function useFormEvents({
   emit,
   getProps,
@@ -65,9 +84,8 @@ export function useFormEvents({
       const hasKey = Reflect.has(values, key);
 
       value = handleInputNumberValue(schema?.component, value);
-      // update-begin--author:liaozhiyang---date:20231226---for：【QQYUN-7535】popup回填字段inputNumber组件验证错误
+      // 代码逻辑说明: 【QQYUN-7535】popup回填字段inputNumber组件验证错误
       value = handleInputStringValue(schema?.component, value);
-      // update-end--author:liaozhiyang---date:20231226---for：【QQYUN-7535】popup回填字段inputNumber组件验证错误
       // 0| '' is allow
       if (hasKey && fields.includes(key)) {
         // time type
@@ -94,6 +112,23 @@ export function useFormEvents({
     });
     validateFields(validKeys).catch((_) => {});
   }
+
+  /**
+   *  根据字段名获取schema
+   * @param field
+   */
+  function getSchemaByField(field: string): Nullable<FormSchema> {
+    if (!isString(field)) {
+      return null
+    }
+    const schemaList: FormSchema[] = unref(getSchema);
+    const index = schemaList.findIndex((schema) => schema.field === field);
+    if (index !== -1) {
+      return cloneDeep(schemaList[index]);
+    }
+    return null
+  }
+
   /**
    * @description: Delete based on field name
    */
@@ -185,7 +220,14 @@ export function useFormEvents({
     updateData.forEach((item) => {
       unref(getSchema).forEach((val) => {
         if (val.field === item.field) {
-          const newSchema = deepMerge(val, item);
+          // update-begin-author:liaozhiyang date:2026-05-12 for:【issue/9612】updateSchema中的函数执行两次
+          const { componentProps: itemCp, ...restItem } = item as any;
+          const newSchema = deepMerge(val, restItem);
+          if (Reflect.has(item, 'componentProps')) {
+            //【issues/7940】componentProps写成函数形式时，updateSchema写成对象时，参数没合并
+            newSchema.componentProps = mergeComponentProps(val.componentProps, itemCp);
+          }
+          // update-end-author:liaozhiyang date:2026-05-12 for:【issue/9612】updateSchema中的函数执行两次
           schema.push(newSchema as FormSchema);
         } else {
           schema.push(val);
@@ -240,8 +282,7 @@ export function useFormEvents({
     if (!formEl) return;
     try {
       const values = await validate();
-      //update-begin---author:zhangdaihao   Date:20140212  for：[bug号]树机构调整------------
-      //--updateBy-begin----author:zyf---date:20211206------for:对查询表单提交的数组处理成字符串------
+      //代码逻辑说明: 对查询表单提交的数组处理成字符串------
       for (let key in values) {
         if (values[key] instanceof Array) {
           let valueType = getValueType(getProps, key);
@@ -250,15 +291,13 @@ export function useFormEvents({
           }
         }
       }
-      //--updateBy-end----author:zyf---date:20211206------for:对查询表单提交的数组处理成字符串------
       const res = handleFormValues(values);
       emit('submit', res);
     } catch (error) {
-      //update-begin-author:taoyan date:2022-11-4 for: 列表查询表单会触发校验错误导致重置失败，原因不明
+      // 代码逻辑说明: 列表查询表单会触发校验错误导致重置失败，原因不明
       emit('submit', {});
       console.error('query form validate error, please ignore!', error)
       //throw new Error(error);
-      //update-end-author:taoyan date:2022-11-4 for: 列表查询表单会触发校验错误导致重置失败，原因不明
     }
   }
 
@@ -270,6 +309,7 @@ export function useFormEvents({
     getFieldsValue,
     updateSchema,
     resetSchema,
+    getSchemaByField,
     appendSchemaByField,
     removeSchemaByFiled,
     resetFields,

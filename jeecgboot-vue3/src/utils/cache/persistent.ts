@@ -21,6 +21,8 @@ import {
 import { DEFAULT_CACHE_TIME } from '/@/settings/encryptionSetting';
 import { toRaw } from 'vue';
 import { pick, omit } from 'lodash-es';
+import { PageEnum } from '/@/enums/pageEnum';
+import { router } from '/@/router';
 
 interface BasicStore {
   [TOKEN_KEY]: string | number | null | undefined;
@@ -58,12 +60,12 @@ function initPersistentMemory() {
 
 export class Persistent {
   static getLocal<T>(key: LocalKeys) {
-    //update-begin---author:scott ---date:2022-10-27  for：token过期退出重新登录，online菜单还是提示token过期----------
+    // 代码逻辑说明: token过期退出重新登录，online菜单还是提示token过期----------
     const globalCache = ls.get(APP_LOCAL_CACHE_KEY);
-    if(globalCache){
+    // 代码逻辑说明: 【issues/7250】自动锁屏无法解锁
+    if (globalCache && router?.currentRoute?.value.path !== PageEnum.BASE_LOGIN) {
       localMemory.setCache(globalCache);
     }
-    //update-end---author:scott ---date::2022-10-27  for：token过期退出重新登录，online菜单还是提示token过期----------
     return localMemory.get(key)?.value as Nullable<T>;
   }
 

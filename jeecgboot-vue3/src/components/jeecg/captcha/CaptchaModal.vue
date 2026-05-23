@@ -76,7 +76,8 @@
        */
       async function getCaptchaCode() {
         await resetFields();
-        randCodeData.checkKey = new Date().getTime();
+        // 代码逻辑说明: [QQYUN-10775]验证码可以复用 #7674------------
+        randCodeData.checkKey = new Date().getTime() + Math.random().toString(36).slice(-4); // 1629428467008;
         getCodeInfo(randCodeData.checkKey).then((res) => {
           randCodeData.randCodeImage = res;
           randCodeData.requestCodeSuccess = true;

@@ -18,38 +18,45 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.aspect.annotation.PermissionData;
 import org.jeecg.common.base.BaseMap;
 import org.jeecg.common.config.TenantContext;
+import org.jeecg.common.constant.CacheConstant;
 import org.jeecg.common.constant.CommonConstant;
+import org.jeecg.common.constant.PasswordConstant;
 import org.jeecg.common.constant.SymbolConstant;
 import org.jeecg.common.modules.redis.client.JeecgRedisClient;
 import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.common.system.util.JwtUtil;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.common.util.*;
+import org.jeecg.config.JeecgBaseConfig;
 import org.jeecg.config.mybatis.MybatisPlusSaasConfig;
 import org.jeecg.modules.base.service.BaseCommonService;
 import org.jeecg.modules.system.entity.*;
+import org.jeecg.modules.system.excelstyle.ExcelExportSysUserStyle;
 import org.jeecg.modules.system.model.DepartIdModel;
+import org.jeecg.modules.system.model.SysUserSysDepPostModel;
 import org.jeecg.modules.system.model.SysUserSysDepartModel;
 import org.jeecg.modules.system.service.*;
+import org.jeecg.modules.system.util.ImportSysUserCache;
 import org.jeecg.modules.system.vo.SysDepartUsersVO;
+import org.jeecg.modules.system.vo.SysUserExportVo;
+import org.jeecg.modules.system.vo.SysUserGroupVO;
 import org.jeecg.modules.system.vo.SysUserRoleVO;
 import org.jeecg.modules.system.vo.lowapp.DepartAndUserInfo;
 import org.jeecg.modules.system.vo.lowapp.UpdateDepartInfo;
-import org.jeecgframework.poi.excel.ExcelImportUtil;
 import org.jeecgframework.poi.excel.def.NormalExcelConstants;
 import org.jeecgframework.poi.excel.entity.ExportParams;
-import org.jeecgframework.poi.excel.entity.ImportParams;
+import org.jeecgframework.poi.excel.entity.enmus.ExcelType;
 import org.jeecgframework.poi.excel.view.JeecgEntityExcelView;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.multipart.MultipartHttpServletRequest;
 import org.springframework.web.servlet.ModelAndView;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -76,6 +83,9 @@ public class SysUserController {
 	private ISysUserRoleService sysUserRoleService;
 
 	@Autowired
+	private ISysUgroupUserService sysUgroupUserService;
+
+	@Autowired
 	private ISysUserDepartService sysUserDepartService;
 
     @Autowired
@@ -94,9 +104,6 @@ public class SysUserController {
     private BaseCommonService baseCommonService;
 
     @Autowired
-    private ISysUserAgentService sysUserAgentService;
-
-    @Autowired
     private ISysPositionService sysPositionService;
 
     @Autowired
@@ -104,6 +111,8 @@ public class SysUserController {
 
     @Autowired
     private JeecgRedisClient jeecgRedisClient;
+    @Autowired
+    private JeecgBaseConfig jeecgBaseConfig;
     
     /**
      * 获取租户下用户数据（支持租户隔离）
@@ -167,10 +176,11 @@ public class SysUserController {
 			user.setDelFlag(CommonConstant.DEL_FLAG_0);
 			//用户表字段org_code不能在这里设置他的值
             user.setOrgCode(null);
+            user.setLastPwdUpdateTime(new Date());
 			// 保存用户走一个service 保证事务
             //获取租户ids
             String relTenantIds = jsonObject.getString("relTenantIds");
-            sysUserService.saveUser(user, selectedRoles, selectedDeparts, relTenantIds);
+            sysUserService.saveUser(user, selectedRoles, selectedDeparts, relTenantIds, false);
             baseCommonService.addLog("添加用户，username： " +user.getUsername() ,CommonConstant.LOG_TYPE_2, 2);
 			result.success("添加成功！");
 		} catch (Exception e) {
@@ -205,7 +215,11 @@ public class SysUserController {
                 // 修改用户走一个service 保证事务
                 //获取租户ids
                 String relTenantIds = jsonObject.getString("relTenantIds");
-				sysUserService.editUser(user, roles, departs, relTenantIds);
+                String updateFromPage = jsonObject.getString("updateFromPage");
+                //update-begin---author:wangshuai---date:2025-11-12---for:【JHHB-776】用户编辑，应该从数据库查出老数据，页面传递什么字段，把这些字段覆盖数据库查询结果，再更新---
+                oConvertUtils.copyNonNullFields(user, sysUser);
+                sysUserService.editUser(sysUser, roles, departs, relTenantIds, updateFromPage);
+                //update-end---author:wangshuai---date:2025-11-12---for:【JHHB-776】用户编辑，应该从数据库查出老数据，页面传递什么字段，把这些字段覆盖数据库查询结果，再更新---
 				result.success("修改成功!");
 			}
 		} catch (Exception e) {
@@ -215,6 +229,42 @@ public class SysUserController {
 		return result;
 	}
 
+    /**
+     * 添加用户【后台租户模式专用，敲敲云不要用这个】
+     *
+     * @param jsonObject
+     * @return
+     */
+    @RequiresPermissions("system:user:addTenantUser")
+    @RequestMapping(value = "/addTenantUser", method = RequestMethod.POST)
+    public Result<SysUser> addTenantUser(@RequestBody JSONObject jsonObject) {
+        Result<SysUser> result = new Result<SysUser>();
+        String selectedRoles = jsonObject.getString("selectedroles");
+        String selectedDeparts = jsonObject.getString("selecteddeparts");
+        try {
+            SysUser user = JSON.parseObject(jsonObject.toJSONString(), SysUser.class);
+            user.setCreateTime(new Date());//设置创建时间
+            String salt = oConvertUtils.randomGen(8);
+            user.setSalt(salt);
+            String passwordEncode = PasswordUtil.encrypt(user.getUsername(), user.getPassword(), salt);
+            user.setPassword(passwordEncode);
+            user.setStatus(1);
+            user.setDelFlag(CommonConstant.DEL_FLAG_0);
+            //用户表字段org_code不能在这里设置他的值
+            user.setOrgCode(null);
+            // 保存用户走一个service 保证事务
+            //获取租户ids
+            String relTenantIds = jsonObject.getString("relTenantIds");
+            sysUserService.saveUser(user, selectedRoles, selectedDeparts, relTenantIds, true);
+            baseCommonService.addLog("添加用户，username： " + user.getUsername(), CommonConstant.LOG_TYPE_2, 2);
+            result.success("添加成功！");
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            result.error500("操作失败");
+        }
+        return result;
+    }
+
 	/**
 	 * 删除用户
 	 */
@@ -222,7 +272,12 @@ public class SysUserController {
 	@RequestMapping(value = "/delete", method = RequestMethod.DELETE)
 	public Result<?> delete(@RequestParam(name="id",required=true) String id) {
 		baseCommonService.addLog("删除用户，id： " +id ,CommonConstant.LOG_TYPE_2, 3);
+        List<String> userNameList = sysUserService.userIdToUsername(Arrays.asList(id));
 		this.sysUserService.deleteUser(id);
+
+        if (!userNameList.isEmpty()) {
+            String joinedString = String.join(",", userNameList);
+        }
 		return Result.ok("删除用户成功");
 	}
 
@@ -233,7 +288,13 @@ public class SysUserController {
 	@RequestMapping(value = "/deleteBatch", method = RequestMethod.DELETE)
 	public Result<?> deleteBatch(@RequestParam(name="ids",required=true) String ids) {
 		baseCommonService.addLog("批量删除用户， ids： " +ids ,CommonConstant.LOG_TYPE_2, 3);
+        List<String> userNameList = sysUserService.userIdToUsername(Arrays.asList(ids.split(",")));
 		this.sysUserService.deleteBatchUsers(ids);
+		
+        // 用户变更，触发同步工作流
+        if (!userNameList.isEmpty()) {
+            String joinedString = String.join(",", userNameList);
+        }
 		return Result.ok("批量删除用户成功");
 	}
 
@@ -253,9 +314,8 @@ public class SysUserController {
 			String[] arr = ids.split(",");
             for (String id : arr) {
 				if(oConvertUtils.isNotEmpty(id)) {
-                    //update-begin---author:liusq ---date:20230620  for：[QQYUN-5577]用户列表-冻结用户，再解冻之后，用户还是无法登陆，有缓存问题 #5066------------
+                    // 代码逻辑说明: [QQYUN-5577]用户列表-冻结用户，再解冻之后，用户还是无法登陆，有缓存问题 #5066------------
                     sysUserService.updateStatus(id,status);
-                    //update-end---author:liusq ---date:20230620  for：[QQYUN-5577]用户列表-冻结用户，再解冻之后，用户还是无法登陆，有缓存问题 #5066------------
                 }
 			}
 		} catch (Exception e) {
@@ -263,6 +323,26 @@ public class SysUserController {
 			result.error500("操作失败"+e.getMessage());
 		}
 		result.success("操作成功!");
+		return result;
+
+    }
+    /**
+     * 重置为系统密码接口
+     * @param usernames
+     * @return
+     */
+    @RequiresRoles({"admin"})
+    @RequiresPermissions("system:user:resetPassword")
+	@RequestMapping(value = "/resetPassword", method = RequestMethod.PUT)
+	public Result<SysUser> resetPassword(@RequestParam(name = "usernames") String usernames) {
+		Result<SysUser> result = new Result<SysUser>();
+		try {
+            sysUserService.resetToSysPassword(usernames);
+            result.success("操作成功!");
+		} catch (Exception e) {
+			log.error(e.getMessage(), e);
+			result.error500(e.getMessage());
+		}
 		return result;
 
     }
@@ -336,16 +416,23 @@ public class SysUserController {
      */
     @RequiresPermissions("system:user:changepwd")
     @RequestMapping(value = "/changePassword", method = RequestMethod.PUT)
-    public Result<?> changePassword(@RequestBody SysUser sysUser) {
+    public Result<?> changePassword(@RequestBody SysUser sysUser, HttpServletRequest request) {
+        //-------------------------------------------------------------------------------------
+        //增加 check防止恶意刷短信接口
+        String clientIp = IpUtils.getIpAddr(request);
+        if(!DySmsLimit.canSendSms(clientIp)){
+            log.warn("-------- IP地址:{}, 短信接口请求太多，有攻击风险！", clientIp);
+            return Result.error("短信接口请求太多，请稍后再试！");
+        }
+        //-------------------------------------------------------------------------------------
         SysUser u = this.sysUserService.getOne(new LambdaQueryWrapper<SysUser>().eq(SysUser::getUsername, sysUser.getUsername()));
         if (u == null) {
             return Result.error("用户不存在！");
         }
         sysUser.setId(u.getId());
-        //update-begin---author:wangshuai ---date:20220316  for：[VUEN-234]修改密码添加敏感日志------------
+        // 代码逻辑说明: [VUEN-234]修改密码添加敏感日志------------
         LoginUser loginUser = (LoginUser) SecurityUtils.getSubject().getPrincipal();
         baseCommonService.addLog("修改用户 "+sysUser.getUsername()+" 的密码，操作人： " +loginUser.getUsername() ,CommonConstant.LOG_TYPE_2, 2);
-        //update-end---author:wangshuai ---date:20220316  for：[VUEN-234]修改密码添加敏感日志------------
         return sysUserService.changePassword(sysUser);
     }
 
@@ -386,7 +473,7 @@ public class SysUserController {
     @RequestMapping(value = "/generateUserId", method = RequestMethod.GET)
     public Result<String> generateUserId() {
         Result<String> result = new Result<>();
-        System.out.println("我执行了,生成用户ID==============================");
+        //System.out.println("我执行了,生成用户ID==============================");
         String userId = UUID.randomUUID().toString().replace("-", "");
         result.setSuccess(true);
         result.setResult(userId);
@@ -444,10 +531,9 @@ public class SysUserController {
             @RequestParam(name="username",required=false) String username,
             @RequestParam(name="isMultiTranslate",required=false) String isMultiTranslate,
             @RequestParam(name="id",required = false) String id) {
-        //update-begin-author:taoyan date:2022-7-14 for: VUEN-1702【禁止问题】sql注入漏洞
+        // 代码逻辑说明: VUEN-1702【禁止问题】sql注入漏洞
         String[] arr = new String[]{departId, realname, username, id};
         SqlInjectionUtil.filterContent(arr, SymbolConstant.SINGLE_QUOTATION_MARK);
-        //update-end-author:taoyan date:2022-7-14 for: VUEN-1702【禁止问题】sql注入漏洞
         IPage<SysUser> pageList = sysUserDepartService.queryDepartUserPageList(departId, username, realname, pageSize, pageNo,id,isMultiTranslate);
         return Result.OK(pageList);
     }
@@ -463,24 +549,58 @@ public class SysUserController {
     public ModelAndView exportXls(SysUser sysUser,HttpServletRequest request) {
         // Step.1 组装查询条件
         QueryWrapper<SysUser> queryWrapper = QueryGenerator.initQueryWrapper(sysUser, request.getParameterMap());
+        queryWrapper.ne("username", "_reserve_user_external");
         //Step.2 AutoPoi 导出Excel
         ModelAndView mv = new ModelAndView(new JeecgEntityExcelView());
-        //update-begin--Author:kangxiaolin  Date:20180825 for：[03]用户导出，如果选择数据则只导出相关数据--------------------
+        // 代码逻辑说明: [03]用户导出，如果选择数据则只导出相关数据--------------------
         String selections = request.getParameter("selections");
        if(!oConvertUtils.isEmpty(selections)){
            queryWrapper.in("id",selections.split(","));
        }
-        //update-end--Author:kangxiaolin  Date:20180825 for：[03]用户导出，如果选择数据则只导出相关数据----------------------
-        List<SysUser> pageList = sysUserService.list(queryWrapper);
-
+        //是否存在部门id
+        boolean izDepartId = true;
+        String departId = request.getParameter("departId");
+        if (oConvertUtils.isNotEmpty(departId)) {
+            LambdaQueryWrapper<SysUserDepart> query = new LambdaQueryWrapper<>();
+            query.in(SysUserDepart::getDepId, Arrays.asList(departId.split(",")));
+            List<SysUserDepart> list = sysUserDepartService.list(query);
+            List<String> userIds = list.stream().map(SysUserDepart::getUserId).collect(Collectors.toList());
+            if (oConvertUtils.listIsNotEmpty(userIds)) {
+                queryWrapper.in("id", userIds);
+            }else{
+                izDepartId = false;
+            }
+        }
+        List<SysUserExportVo> list = new ArrayList<>();
+        // 代码逻辑说明: 【JHHB-762】【用户管理】需要支持按组织架构查询用户---
+        if(izDepartId){
+            List<SysUser> pageList = sysUserService.list(queryWrapper);
+            list  = sysUserService.getDepartAndRoleExportMsg(pageList);
+        }
         //导出文件名称
         mv.addObject(NormalExcelConstants.FILE_NAME, "用户列表");
-        mv.addObject(NormalExcelConstants.CLASS, SysUser.class);
+        mv.addObject(NormalExcelConstants.CLASS, SysUserExportVo.class);
 		LoginUser user = (LoginUser) SecurityUtils.getSubject().getPrincipal();
-        ExportParams exportParams = new ExportParams("用户列表数据", "导出人:"+user.getRealname(), "导出信息");
+        ExportParams exportParams = new ExportParams("导入规则：\n" +
+                "1. 用户名为必填项，仅支持新增数据导入；\n" +
+                "2. 多个部门、角色或负责部门请用英文分号 ; 分隔，如：财务部;研发部；\n" +
+                "3. 部门层级请用英文斜杠 / 分隔，如：北京公司/财务部/财务一部；\n" +
+                "4. 部门类型需与部门层级一致，也用 / 分隔，如：公司/部门/部门 或 1/3/3，多个类型用 ; 分隔。机构类型编码：公司(1)，子公司(4)，部门(3)；\n" +
+                "5. 部门根据用户名匹配，若存在多个则关联最新创建的部门，不存在时自动新增；\n" +
+                "6. 负责部门与所属部门导入规则一致，若所属部门不包含负责部门，则不关联负责部门；\n" +
+                "7. 用户主岗位导入时会在部门下自动创建新岗位，职级为空时默认不与岗位建立关联。", "导出人：" + user.getRealname(), "导出信息");
+        exportParams.setTitleHeight((short)70);
+        exportParams.setStyle(ExcelExportSysUserStyle.class);
         exportParams.setImageBasePath(upLoadPath);
+        //导出为xlsx
+        exportParams.setType(ExcelType.XSSF);
         mv.addObject(NormalExcelConstants.PARAMS, exportParams);
-        mv.addObject(NormalExcelConstants.DATA_LIST, pageList);
+        mv.addObject(NormalExcelConstants.DATA_LIST, list);
+        //用户导出支持导出字段
+        String exportFields = request.getParameter(NormalExcelConstants.EXPORT_FIELDS);
+        if(oConvertUtils.isNotEmpty(exportFields)){
+            mv.addObject(NormalExcelConstants.EXPORT_FIELDS, exportFields);
+        }
         return mv;
     }
 
@@ -494,78 +614,8 @@ public class SysUserController {
     @RequiresPermissions("system:user:import")
     @RequestMapping(value = "/importExcel", method = RequestMethod.POST)
     public Result<?> importExcel(HttpServletRequest request, HttpServletResponse response)throws IOException {
-        MultipartHttpServletRequest multipartRequest = (MultipartHttpServletRequest) request;
-        Map<String, MultipartFile> fileMap = multipartRequest.getFileMap();
-        // 错误信息
-        List<String> errorMessage = new ArrayList<>();
-        int successLines = 0, errorLines = 0;
-        for (Map.Entry<String, MultipartFile> entity : fileMap.entrySet()) {
-            MultipartFile file = entity.getValue();// 获取上传文件对象
-            ImportParams params = new ImportParams();
-            params.setTitleRows(2);
-            params.setHeadRows(1);
-            params.setNeedSave(true);
-            try {
-                List<SysUser> listSysUsers = ExcelImportUtil.importExcel(file.getInputStream(), SysUser.class, params);
-                for (int i = 0; i < listSysUsers.size(); i++) {
-                    SysUser sysUserExcel = listSysUsers.get(i);
-                    if (StringUtils.isBlank(sysUserExcel.getPassword())) {
-                        // 密码默认为 “123456”
-                        sysUserExcel.setPassword("123456");
-                    }
-                    // 密码加密加盐
-                    String salt = oConvertUtils.randomGen(8);
-                    sysUserExcel.setSalt(salt);
-                    String passwordEncode = PasswordUtil.encrypt(sysUserExcel.getUsername(), sysUserExcel.getPassword(), salt);
-                    sysUserExcel.setPassword(passwordEncode);
-                    try {
-                        sysUserService.save(sysUserExcel);
-                        successLines++;
-                    } catch (Exception e) {
-                        errorLines++;
-                        String message = e.getMessage().toLowerCase();
-                        int lineNumber = i + 1;
-                        // 通过索引名判断出错信息
-                        if (message.contains(CommonConstant.SQL_INDEX_UNIQ_SYS_USER_USERNAME)) {
-                            errorMessage.add("第 " + lineNumber + " 行：用户名已经存在，忽略导入。");
-                        } else if (message.contains(CommonConstant.SQL_INDEX_UNIQ_SYS_USER_WORK_NO)) {
-                            errorMessage.add("第 " + lineNumber + " 行：工号已经存在，忽略导入。");
-                        } else if (message.contains(CommonConstant.SQL_INDEX_UNIQ_SYS_USER_PHONE)) {
-                            errorMessage.add("第 " + lineNumber + " 行：手机号已经存在，忽略导入。");
-                        } else if (message.contains(CommonConstant.SQL_INDEX_UNIQ_SYS_USER_EMAIL)) {
-                            errorMessage.add("第 " + lineNumber + " 行：电子邮件已经存在，忽略导入。");
-                        }  else if (message.contains(CommonConstant.SQL_INDEX_UNIQ_SYS_USER)) {
-                            errorMessage.add("第 " + lineNumber + " 行：违反表唯一性约束。");
-                        } else {
-                            errorMessage.add("第 " + lineNumber + " 行：未知错误，忽略导入");
-                            log.error(e.getMessage(), e);
-                        }
-                    }
-                    // 批量将部门和用户信息建立关联关系
-                    String departIds = sysUserExcel.getDepartIds();
-                    if (StringUtils.isNotBlank(departIds)) {
-                        String userId = sysUserExcel.getId();
-                        String[] departIdArray = departIds.split(",");
-                        List<SysUserDepart> userDepartList = new ArrayList<>(departIdArray.length);
-                        for (String departId : departIdArray) {
-                            userDepartList.add(new SysUserDepart(userId, departId));
-                        }
-                        sysUserDepartService.saveBatch(userDepartList);
-                    }
-
-                }
-            } catch (Exception e) {
-                errorMessage.add("发生异常：" + e.getMessage());
-                log.error(e.getMessage(), e);
-            } finally {
-                try {
-                    file.getInputStream().close();
-                } catch (IOException e) {
-                	log.error(e.getMessage(), e);
-                }
-            }
-        }
-        return ImportExcelUtil.imporReturnRes(errorLines,successLines,errorMessage);
+        //return ImportOldUserUtil.importOldSysUser(request);
+        return sysUserService.importSysUser(request);
     }
 
     /**
@@ -591,15 +641,35 @@ public class SysUserController {
      * @return
      */
     @RequestMapping(value = "/queryByNames", method = RequestMethod.GET)
-    public Result<Collection<SysUser>> queryByNames(@RequestParam(name = "userNames") String userNames) {
-        Result<Collection<SysUser>> result = new Result<>();
+    public Result<List<Map<String, Object>>> queryByNames(@RequestParam(name = "userNames") String userNames) {
+        Result<List<Map<String, Object>>> result = new Result<>();
         String[] names = userNames.split(",");
-        QueryWrapper<SysUser> queryWrapper=new QueryWrapper();
-        queryWrapper.lambda().in(true,SysUser::getUsername,names);
-        Collection<SysUser> userRole = sysUserService.list(queryWrapper);
+        //update-begin---author:zzl ---date:2026-04-03  for：只返回username和realname字段----
+        List<SysUser> userList = sysUserService.lambdaQuery()
+                .in(SysUser::getUsername, names)
+                .select(SysUser::getUsername, SysUser::getRealname)
+                .list();
+        List<Map<String, Object>> dataList = userList.stream().map(user -> {
+            Map<String, Object> map = new java.util.HashMap<>();
+            map.put("username", user.getUsername());
+            map.put("realname", user.getRealname());
+            return map;
+        }).collect(java.util.stream.Collectors.toList());
         result.setSuccess(true);
-        result.setResult(userRole);
+        result.setResult(dataList);
+        //update-end---author:zzl ---date:2026-04-03  for：只返回username和realname字段----
         return result;
+    }
+
+    /**
+     * @功能：根据userName查询用户以及部门信息
+     * @param userName
+     * @return
+     */
+    @RequestMapping(value = "/queryUserAndDeptByName", method = RequestMethod.GET)
+    public Result<Map<String,String>> queryUserAndDeptByName(@RequestParam(name = "userName") String userName) {
+        Map<String,String> userInfo= sysUserService.queryUserAndDeptByName(userName);
+        return Result.ok(userInfo);
     }
 
 	/**
@@ -620,10 +690,9 @@ public class SysUserController {
 		if(user==null) {
 			return Result.error("用户不存在！");
 		}
-        //update-begin---author:wangshuai ---date:20220316  for：[VUEN-234]修改密码添加敏感日志------------
+        // 代码逻辑说明: [VUEN-234]修改密码添加敏感日志------------
         LoginUser loginUser = (LoginUser) SecurityUtils.getSubject().getPrincipal();
         baseCommonService.addLog("修改密码，username： " +loginUser.getUsername() ,CommonConstant.LOG_TYPE_2, 2);
-        //update-end---author:wangshuai ---date:20220316  for：[VUEN-234]修改密码添加敏感日志------------
 		return sysUserService.resetPassword(username,oldpassword,password,confirmpassword);
 	}
 
@@ -634,7 +703,8 @@ public class SysUserController {
         Page<SysUser> page = new Page<SysUser>(pageNo, pageSize);
         String roleId = req.getParameter("roleId");
         String username = req.getParameter("username");
-        IPage<SysUser> pageList = sysUserService.getUserByRoleId(page,roleId,username);
+        String realname = req.getParameter("realname");
+        IPage<SysUser> pageList = sysUserService.getUserByRoleId(page,roleId,username,realname);
         result.setSuccess(true);
         result.setResult(pageList);
         return result;
@@ -719,7 +789,100 @@ public class SysUserController {
         }
         return result;
     }
+    /**
+     * 给指定用户组添加用户
+     *
+     * @param
+     * @return
+     */
+    @RequestMapping(value = "/addSysUserGroup", method = RequestMethod.POST)
+    public Result<String> addSysUserGroup(@RequestBody SysUserGroupVO sysUserGroupVO) {
+        Result<String> result = new Result<String>();
+        try {
+            String groupId = sysUserGroupVO.getGroupId();
+            for(String sysUserId : sysUserGroupVO.getUserIdList()) {
+                SysUgroupUser sysUgroupUser = new SysUgroupUser(sysUserId,groupId);
+                QueryWrapper<SysUgroupUser> queryWrapper = new QueryWrapper<SysUgroupUser>();
+                queryWrapper.eq("group_id", groupId).eq("user_id",sysUserId);
+                SysUgroupUser one = sysUgroupUserService.getOne(queryWrapper);
+                if(one==null){
+                    sysUgroupUserService.save(sysUgroupUser);
+                }
 
+            }
+            result.setMessage("添加成功!");
+            result.setSuccess(true);
+            return result;
+        }catch(Exception e) {
+            log.error(e.getMessage(), e);
+            result.setSuccess(false);
+            result.setMessage("出错了: " + e.getMessage());
+            return result;
+        }
+    }
+    /**
+     *   删除指定用户组的用户关系
+     * @param
+     * @return
+     */
+    @RequestMapping(value = "/deleteGroupUser", method = RequestMethod.DELETE)
+    public Result<SysUgroupUser> deleteGroupUser(@RequestParam(name="groupId") String groupId,
+                                                 @RequestParam(name="userId",required=true) String userId
+    ) {
+        Result<SysUgroupUser> result = new Result<SysUgroupUser>();
+        try {
+            QueryWrapper<SysUgroupUser> queryWrapper = new QueryWrapper<SysUgroupUser>();
+            queryWrapper.eq("group_id", groupId).eq("user_id",userId);
+            sysUgroupUserService.remove(queryWrapper);
+            result.success("删除成功!");
+        }catch(Exception e) {
+            log.error(e.getMessage(), e);
+            result.error500("删除失败！");
+        }
+        return result;
+    }
+    /**
+     * 批量删除指定用户组下的用户关系
+     *
+     * @param
+     * @return
+     */
+    @RequestMapping(value = "/deleteUserGroupBatch", method = RequestMethod.DELETE)
+    public Result<SysUgroupUser> deleteUserGroupBatch(
+            @RequestParam(name="groupId") String groupId,
+            @RequestParam(name="userIds",required=true) String userIds) {
+        Result<SysUgroupUser> result = new Result<SysUgroupUser>();
+        try {
+            QueryWrapper<SysUgroupUser> queryWrapper = new QueryWrapper<SysUgroupUser>();
+            queryWrapper.eq("group_id", groupId).in("user_id",Arrays.asList(userIds.split(",")));
+            sysUgroupUserService.remove(queryWrapper);
+            result.success("删除成功!");
+        }catch(Exception e) {
+            log.error(e.getMessage(), e);
+            result.error500("删除失败！");
+        }
+        return result;
+    }
+    /**
+     * 用户组下用户分页列表查询
+     * @param pageNo
+     * @param pageSize
+     * @param req
+     * @return
+     */
+    @RequestMapping(value = "/groupUserList", method = RequestMethod.GET)
+    public Result<IPage<SysUser>> groupUserList(@RequestParam(name="pageNo", defaultValue="1") Integer pageNo,
+                                           @RequestParam(name="pageSize", defaultValue="10") Integer pageSize, HttpServletRequest req) {
+        Result<IPage<SysUser>> result = new Result<IPage<SysUser>>();
+        Page<SysUser> page = new Page<SysUser>(pageNo, pageSize);
+        String groupId = req.getParameter("groupId");
+        String username = req.getParameter("username");
+        String realname = req.getParameter("realname");
+        IPage<SysUser> pageList = sysUserService.getUserByUgroupId(page,groupId,username,realname);
+        result.setSuccess(true);
+        result.setResult(pageList);
+        return result;
+    }
     /**
      * 部门用户列表
      */
@@ -736,7 +899,9 @@ public class SysUserController {
         if(oConvertUtils.isEmpty(depId)){
             LoginUser user = (LoginUser) SecurityUtils.getSubject().getPrincipal();
             int userIdentity = user.getUserIdentity() != null?user.getUserIdentity():CommonConstant.USER_IDENTITY_1;
-            if(oConvertUtils.isNotEmpty(userIdentity) && userIdentity == CommonConstant.USER_IDENTITY_2 ){
+            // 代码逻辑说明: [QQYUN-10775]验证码可以复用 #7674------------
+            if(oConvertUtils.isNotEmpty(userIdentity) && userIdentity == CommonConstant.USER_IDENTITY_2
+                    && oConvertUtils.isNotEmpty(user.getDepartIds())) {
                 subDepids = sysDepartService.getMySubDepIdsByDepId(user.getDepartIds());
             }
         }else{
@@ -755,10 +920,8 @@ public class SysUserController {
                     item.setOrgCode(useDepNames.get(item.getId()));
                 });
             }
-            //update-begin---author:wangshuai ---date:20221223  for：[QQYUN-3371]租户逻辑改造，改成关系表------------
             //设置租户id
             page.setRecords(userTenantService.setUserTenantIds(page.getRecords()));
-            //update-end---author:wangshuai ---date:20221223  for：[QQYUN-3371]租户逻辑改造，改成关系表------------
             result.setSuccess(true);
             result.setResult(pageList);
         }else{
@@ -785,7 +948,7 @@ public class SysUserController {
     }
 
     /**
-     * 根据 orgCode 查询用户，包括子部门下的用户
+     * 根据 orgCode 查询用户，包括子部门下的用户 【不包含岗位下的用户】
      * 针对通讯录模块做的接口，将多个部门的用户合并成一条记录，并转成对前端友好的格式
      */
     @GetMapping("/queryByOrgCodeForAddressList")
@@ -831,6 +994,55 @@ public class SysUserController {
     }
 
     /**
+     * 根据 orgCode 查询用户，包括公司、子公司、岗位部门下的用户
+     */
+    @GetMapping("/queryDepartPostByOrgCode")
+    public Result<?> queryDepartPostByOrgCode(@RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
+                                              @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
+                                              @RequestParam(name = "orgCode",required = false) String orgCode,
+                                              SysUser userParams
+    ) {
+        IPage page = new Page(pageNo, pageSize);
+        IPage<SysUserSysDepPostModel> pageList = sysUserService.queryDepartPostUserByOrgCode(orgCode, userParams, page);
+        return Result.ok(pageList);
+    }
+
+    /**
+     * 根据 orgCode 查询用户信息（部门全路径，主岗位和兼职岗位的信息），包括公司、子公司、部门
+     */
+    @GetMapping("/queryDepartUserByOrgCode")
+    public Result<IPage<SysUserSysDepPostModel>> queryDepartUserByOrgCode(@RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
+                                              @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
+                                              @RequestParam(name = "orgCode",required = false) String orgCode,
+                                              SysUser userParams
+    ) {
+        IPage page = new Page(pageNo, pageSize);
+        IPage<SysUserSysDepPostModel> pageList = sysUserService.queryDepartUserByOrgCode(orgCode, userParams, page);
+        return Result.ok(pageList);
+    }
+
+    /**
+     * 通讯录点击用户获取用户详情（包含用户基本信息、部门全路径、主岗位兼职岗位全路径）
+     * 
+     * @param userId
+     * @return
+     */
+    @GetMapping("/getUserDetailByUserId")
+    public Result<SysUserSysDepPostModel> getUserDetailByUserId(@RequestParam(name = "userId") String userId) {
+        Result<SysUserSysDepPostModel> result = new Result<SysUserSysDepPostModel>();
+        try {
+            SysUserSysDepPostModel sysDepPostModel = sysUserService.getUserDetailByUserId(userId);
+            result.setSuccess(true);
+            result.setResult(sysDepPostModel);
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+            result.setSuccess(false);
+            result.setMessage("查询失败: " + e.getMessage());
+        }
+        return result;
+    }
+    
+    /**
      * 给指定部门添加对应的用户
      */
     @RequiresPermissions("system:user:editDepartWithUser")
@@ -839,14 +1051,20 @@ public class SysUserController {
         Result<String> result = new Result<String>();
         try {
             String sysDepId = sysDepartUsersVO.getDepId();
+            boolean updated = false;
             for(String sysUserId:sysDepartUsersVO.getUserIdList()) {
                 SysUserDepart sysUserDepart = new SysUserDepart(null,sysUserId,sysDepId);
                 QueryWrapper<SysUserDepart> queryWrapper = new QueryWrapper<SysUserDepart>();
                 queryWrapper.eq("dep_id", sysDepId).eq("user_id",sysUserId);
                 SysUserDepart one = sysUserDepartService.getOne(queryWrapper);
                 if(one==null){
+                    updated = true;
                     sysUserDepartService.save(sysUserDepart);
                 }
+            }
+            // 【JHHB-737】更新关系后清空用户缓存
+            if (updated) {
+                redisUtil.removeAll(CacheConstant.SYS_USERS_CACHE);
             }
             result.setMessage("添加成功!");
             result.setSuccess(true);
@@ -906,6 +1124,9 @@ public class SysUserController {
             boolean b = sysUserDepartService.remove(queryWrapper);
             if(b){
                 departRoleUserService.removeDeptRoleUser(Arrays.asList(userIds.split(",")),depId);
+            }else{
+                result.error500("删除失败，目标用户不在当前部门！");
+                return result;
             }
             result.success("删除成功!");
         }catch(Exception e) {
@@ -953,10 +1174,9 @@ public class SysUserController {
 		String phone = jsonObject.getString("phone");
 		String smscode = jsonObject.getString("smscode");
 
-        //update-begin-author:taoyan date:2022-9-13 for: VUEN-2245 【漏洞】发现新漏洞待处理20220906
+        // 代码逻辑说明: VUEN-2245 【漏洞】发现新漏洞待处理20220906
 		String redisKey = CommonConstant.PHONE_REDIS_KEY_PRE+phone;
 		Object code = redisUtil.get(redisKey);
-        //update-end-author:taoyan date:2022-9-13 for: VUEN-2245 【漏洞】发现新漏洞待处理20220906
 
 		String username = jsonObject.getString("username");
 		//未设置用户名，则用手机号作为用户名
@@ -1019,6 +1239,7 @@ public class SysUserController {
 			user.setStatus(CommonConstant.USER_UNFREEZE);
 			user.setDelFlag(CommonConstant.DEL_FLAG_0);
 			user.setActivitiSync(CommonConstant.ACT_SYNC_1);
+            user.setLastPwdUpdateTime(new Date());
 			sysUserService.addUserWithRole(user,"");//默认临时角色 test
 			result.success("注册成功");
 		} catch (Exception e) {
@@ -1071,17 +1292,28 @@ public class SysUserController {
 		Result<Map<String,String>> result = new Result<Map<String,String>>();
 		String phone = jsonObject.getString("phone");
 		String smscode = jsonObject.getString("smscode");
-        //update-begin-author:taoyan date:2022-9-13 for: VUEN-2245 【漏洞】发现新漏洞待处理20220906
+        // 代码逻辑说明: VUEN-2245 【漏洞】发现新漏洞待处理20220906
         String redisKey = CommonConstant.PHONE_REDIS_KEY_PRE+phone;
 		Object code = redisUtil.get(redisKey);
-		if (!smscode.equals(code)) {
+        // 代码逻辑说明: 【issues/8567】严重：修改密码存在水平越权问题。---
+        if (null == code) {
+            result.setMessage("短信验证码失效！");
+            result.setSuccess(false);
+            return result;
+        }
+        String smsCode = "";
+        if (code.toString().contains("code")) {
+            smsCode = JSONObject.parseObject(code.toString()).getString("code");
+        } else {
+            smsCode = code.toString();
+        }
+		if (!smscode.equals(smsCode)) {
 			result.setMessage("手机验证码错误");
 			result.setSuccess(false);
 			return result;
 		}
 		//设置有效时间
-		redisUtil.set(redisKey, smscode,600);
-        //update-end-author:taoyan date:2022-9-13 for: VUEN-2245 【漏洞】发现新漏洞待处理20220906
+		redisUtil.set(redisKey, code,600);
 
 		//新增查询用户名
 		LambdaQueryWrapper<SysUser> query = new LambdaQueryWrapper<>();
@@ -1117,15 +1349,29 @@ public class SysUserController {
         }
 
         SysUser sysUser=new SysUser();
-        //update-begin-author:taoyan date:2022-9-13 for: VUEN-2245 【漏洞】发现新漏洞待处理20220906
+        // 代码逻辑说明: VUEN-2245 【漏洞】发现新漏洞待处理20220906
         String redisKey = CommonConstant.PHONE_REDIS_KEY_PRE+phone;
         Object object= redisUtil.get(redisKey);
-        //update-end-author:taoyan date:2022-9-13 for: VUEN-2245 【漏洞】发现新漏洞待处理20220906
         if(null==object) {
         	result.setMessage("短信验证码失效！");
             result.setSuccess(false);
             return result;
         }
+
+        // 代码逻辑说明: 【issues/8567】严重：修改密码存在水平越权问题。---
+        String redisUsername = "";
+        if(object.toString().contains("code")){
+            JSONObject jsonObject = JSONObject.parseObject(object.toString());
+            object = jsonObject.getString("code");
+            redisUsername = jsonObject.getString("username");
+        }
+        //验证是否为当前用户的
+        if(oConvertUtils.isNotEmpty(redisUsername) && !username.equals(redisUsername)){
+            result.setMessage("此验证码不是当前用户的！");
+            result.setSuccess(false);
+            return result;
+        }
+        
         if(!smscode.equals(object.toString())) {
         	result.setMessage("短信验证码不匹配！");
             result.setSuccess(false);
@@ -1133,7 +1379,7 @@ public class SysUserController {
         }
         sysUser = this.sysUserService.getOne(new LambdaQueryWrapper<SysUser>().eq(SysUser::getUsername,username).eq(SysUser::getPhone,phone));
         if (sysUser == null) {
-            result.setMessage("当前登录用户和绑定的手机号不匹配，无法修改密码！");
+            result.setMessage("当前用户和绑定的手机号不匹配，无法修改密码！");
             result.setSuccess(false);
             return result;
         } else {
@@ -1141,10 +1387,10 @@ public class SysUserController {
             sysUser.setSalt(salt);
             String passwordEncode = PasswordUtil.encrypt(sysUser.getUsername(), password, salt);
             sysUser.setPassword(passwordEncode);
+            sysUser.setLastPwdUpdateTime(new Date());
             this.sysUserService.updateById(sysUser);
-            //update-begin---author:wangshuai ---date:20220316  for：[VUEN-234]密码重置添加敏感日志------------
+            // 代码逻辑说明: [VUEN-234]密码重置添加敏感日志------------
             baseCommonService.addLog("重置 "+username+" 的密码，操作人： " +sysUser.getUsername() ,CommonConstant.LOG_TYPE_2, 2);
-            //update-end---author:wangshuai ---date:20220316  for：[VUEN-234]密码重置添加敏感日志------------
             result.setSuccess(true);
             result.setMessage("密码重置完成！");
             //修改完密码后清空redis
@@ -1174,11 +1420,26 @@ public class SysUserController {
 
 			// 根据用户名查询用户信息
 			SysUser sysUser = sysUserService.getUserByName(username);
+			//update-begin---author:zhangdaihao ---date:2026-04-15  for：【issue/9518】校验外部传入token的签名，防止越权-----------
+			if (oConvertUtils.isNotEmpty(token)) {
+				if (sysUser == null || !JwtUtil.verify(token, username, sysUser.getPassword())) {
+					return Result.error(401, "token校验失败");
+				}
+			}
+			//update-end---author:zhangdaihao ---date:2026-04-15  for：【issue/9518】校验外部传入token的签名，防止越权-----------
 			Map<String, Object> map = new HashMap<String, Object>();
 			map.put("sysUserId", sysUser.getId());
 			map.put("sysUserCode", sysUser.getUsername()); // 当前登录用户登录账号
 			map.put("sysUserName", sysUser.getRealname()); // 当前登录用户真实名称
 			map.put("sysOrgCode", sysUser.getOrgCode()); // 当前登录用户部门编号
+
+            // 【QQYUN-12930】设置部门名称
+            if (oConvertUtils.isNotEmpty(sysUser.getOrgCode())) {
+                SysDepart sysDepart = sysDepartService.lambdaQuery().select(SysDepart::getDepartName).eq(SysDepart::getOrgCode, sysUser.getOrgCode()).one();
+                if (sysDepart != null) {
+                    map.put("sysOrgName", sysDepart.getDepartName()); // 当前登录用户部门名称
+                }
+            }
 
 			log.debug(" ------ 通过令牌获取部分用户信息，已获取的用户信息： " + map);
 
@@ -1286,7 +1547,7 @@ public class SysUserController {
      * @param jsonObject
      * @return
      */
-    @RequiresRoles({"admin"})
+    @RequiresPermissions("system:user:app:edit")
     @RequestMapping(value = "/appEdit", method = {RequestMethod.PUT,RequestMethod.POST})
     public Result<SysUser> appEdit(HttpServletRequest request,@RequestBody JSONObject jsonObject) {
         Result<SysUser> result = new Result<SysUser>();
@@ -1324,7 +1585,7 @@ public class SysUserController {
                     sysUser.setPhone(phone);
                 }
                 if(StringUtils.isNotBlank(email)){
-                    //update-begin---author:wangshuai ---date:20220708  for：[VUEN-1528]积木官网邮箱重复，应该提示准确------------
+                    // 代码逻辑说明: [VUEN-1528]积木官网邮箱重复，应该提示准确------------
                     LambdaQueryWrapper<SysUser> emailQuery = new LambdaQueryWrapper<>();
                     emailQuery.eq(SysUser::getEmail,email);
                     long count = sysUserService.count(emailQuery);
@@ -1332,7 +1593,6 @@ public class SysUserController {
                         result.error500("保存失败，邮箱已存在!");
                         return result;
                     }
-                    //update-end---author:wangshuai ---date:20220708  for：[VUEN-1528]积木官网邮箱重复，应该提示准确--------------
                     sysUser.setEmail(email);
                 }
                 if(null != birthday){
@@ -1353,7 +1613,7 @@ public class SysUserController {
      * @return
      */
     @RequestMapping(value = "/saveClientId", method = RequestMethod.GET)
-    public Result<SysUser> saveClientId(HttpServletRequest request,@RequestParam("clientId")String clientId) {
+    public Result<SysUser> saveClientId(HttpServletRequest request,@RequestParam(value = "clientId",required = false)String clientId) {
         Result<SysUser> result = new Result<SysUser>();
         try {
             String username = JwtUtil.getUserNameByToken(request);
@@ -1361,8 +1621,7 @@ public class SysUserController {
             if(sysUser==null) {
                 result.error500("未找到对应用户!");
             }else {
-                sysUser.setClientId(clientId);
-                sysUserService.updateById(sysUser);
+                sysUserService.updateClientId(clientId,sysUser.getId());
             }
         } catch (Exception e) {
             log.error(e.getMessage(), e);
@@ -1420,7 +1679,7 @@ public class SysUserController {
                                               @RequestParam(name="pageSize", defaultValue="10") Integer pageSize,HttpServletRequest request) {
         Result<List<SysUser>> result = new Result<List<SysUser>>();
         LambdaQueryWrapper<SysUser> queryWrapper =new LambdaQueryWrapper<SysUser>();
-        //TODO 外部模拟登陆临时账号，列表不显示
+        // 外部模拟登陆临时账号，列表不显示
         queryWrapper.ne(SysUser::getUsername,"_reserve_user_external");
         //增加 username传参
         if(oConvertUtils.isNotEmpty(username)){
@@ -1436,15 +1695,19 @@ public class SysUserController {
         //是否开启系统管理模块的多租户数据隔离【SAAS多租户模式】
         if (MybatisPlusSaasConfig.OPEN_SYSTEM_TENANT_CONTROL) {
             String tenantId = oConvertUtils.getString(TokenUtils.getTenantIdByRequest(request),"-1");
-            //update-begin---author:wangshuai ---date:20221223  for：[QQYUN-3371]租户逻辑改造，改成关系表------------
+            // 代码逻辑说明: [QQYUN-3371]租户逻辑改造，改成关系表------------
             List<String> userIds = userTenantService.getUserIdsByTenantId(Integer.valueOf(tenantId));
             if (oConvertUtils.listIsNotEmpty(userIds)) {
                 queryWrapper.in(SysUser::getId, userIds);
             }
-            //update-end---author:wangshuai ---date:20221223  for：[QQYUN-3371]租户逻辑改造，改成关系表------------
         }
         //------------------------------------------------------------------------------------------------
         Page<SysUser> page = new Page<>(pageNo, pageSize);
+
+        // 代码逻辑说明: JHHB-812 【移动端】人员按照排序展示 选择人员，通讯录等 123正序排
+        queryWrapper.orderByAsc(SysUser::getSort);
+        queryWrapper.orderByDesc(SysUser::getCreateTime);
+
         IPage<SysUser> pageList = this.sysUserService.page(page, queryWrapper);
         //批量查询用户的所属部门
         //step.1 先拿到全部的 useids
@@ -1477,10 +1740,9 @@ public class SysUserController {
             result.setSuccess(false);
             return result;
         }
-        //update-begin-author:taoyan date:2022-9-13 for: VUEN-2245 【漏洞】发现新漏洞待处理20220906
+        // 代码逻辑说明: VUEN-2245 【漏洞】发现新漏洞待处理20220906
         String redisKey = CommonConstant.PHONE_REDIS_KEY_PRE+phone;
         Object object= redisUtil.get(redisKey);
-        //update-end-author:taoyan date:2022-9-13 for: VUEN-2245 【漏洞】发现新漏洞待处理20220906
         if(null==object) {
             result.setMessage("短信验证码失效！");
             result.setSuccess(false);
@@ -1509,9 +1771,8 @@ public class SysUserController {
     @GetMapping("/getMultiUser")
     public List<SysUser> getMultiUser(SysUser sysUser){
         QueryWrapper<SysUser> queryWrapper = QueryGenerator.initQueryWrapper(sysUser, null);
-        //update-begin---author:wangshuai ---date:20220104  for：[JTC-297]已冻结用户仍可设置为代理人------------
+        // 代码逻辑说明: [JTC-297]已冻结用户仍可设置为代理人------------
         queryWrapper.eq("status",Integer.parseInt(CommonConstant.STATUS_1));
-        //update-end---author:wangshuai ---date:20220104  for：[JTC-297]已冻结用户仍可设置为代理人------------
         List<SysUser> ls = this.sysUserService.list(queryWrapper);
         for(SysUser user: ls){
             user.setPassword(null);
@@ -1558,6 +1819,7 @@ public class SysUserController {
             @RequestParam(name = "roleId", required = false) String roleId,
             @RequestParam(name="keyword",required=false) String keyword,
             @RequestParam(name="excludeUserIdList",required = false) String excludeUserIdList,
+            @RequestParam(name="includeUsernameList",required = false) String includeUsernameList,
             HttpServletRequest req) {
         //------------------------------------------------------------------------------------------------
         Integer tenantId = null;
@@ -1568,25 +1830,8 @@ public class SysUserController {
             log.info("---------简流中选择用户接口，通过租户筛选，租户ID={}", tenantId);
         }
         //------------------------------------------------------------------------------------------------
-        IPage<SysUser> pageList = sysUserDepartService.getUserInformation(tenantId, departId,roleId, keyword, pageSize, pageNo,excludeUserIdList);
+        IPage<SysUser> pageList = sysUserDepartService.getUserInformation(tenantId, departId,roleId, keyword, pageSize, pageNo,excludeUserIdList,includeUsernameList);
         return Result.OK(pageList);
-    }
-
-    /**
-     * 用户离职(新增代理人和用户状态变更操作)【低代码应用专用接口】
-     * @param sysUserAgent
-     * @return
-     */
-    @PutMapping("/userQuitAgent")
-    public Result<String> userQuitAgent(@RequestBody SysUserAgent sysUserAgent){
-        //判断id是否为空
-        if(oConvertUtils.isNotEmpty(sysUserAgent.getId())){
-            sysUserAgentService.updateById(sysUserAgent);
-        }else{
-            sysUserAgentService.save(sysUserAgent);
-        }
-        sysUserService.userQuit(sysUserAgent.getUserName());
-        return Result.ok("离职成功");
     }
 
     /**
@@ -1623,12 +1868,6 @@ public class SysUserController {
         if (StringUtils.isNotBlank(userIds)) {
             userTenantService.putCancelQuit(Arrays.asList(userIds.split(SymbolConstant.COMMA)),tenantId);
         }
-        if(StringUtils.isNotEmpty(usernames)){
-            //根据用户名删除代理人
-            LambdaQueryWrapper<SysUserAgent> query = new LambdaQueryWrapper<>();
-            query.in(SysUserAgent::getUserName,Arrays.asList(usernames.split(SymbolConstant.COMMA)));
-            sysUserAgentService.remove(query);
-        }
         return Result.ok("取消离职成功");
     }
 
@@ -1644,11 +1883,9 @@ public class SysUserController {
             return Result.error("未找到该用户数据");
         }
 
-        //update-begin---author:wangshuai ---date:20230220  for：[QQYUN-3980]组织管理中 职位功能 职位表加租户id 加职位-用户关联表------------
         //获取用户id通过职位数据
         List<SysPosition> sysPositionList = sysPositionService.getPositionList(user.getId());
         if(null != sysPositionList && sysPositionList.size()>0){
-        //update-end---author:wangshuai ---date:20230220  for：[QQYUN-3980]组织管理中 职位功能 职位表加租户id 加职位-用户关联表------------
             StringBuilder nameBuilder = new StringBuilder();
             StringBuilder idBuilder = new StringBuilder();
             String verticalBar = " | ";
@@ -1828,5 +2065,130 @@ public class SysUserController {
     @RequestMapping(value = "/importAppUser", method = RequestMethod.POST)
     public Result<?> importAppUser(HttpServletRequest request, HttpServletResponse response)throws IOException {
         return sysUserService.importAppUser(request);
+    }
+
+    /**
+     * 更改手机号（敲敲云个人设置专用）
+     *
+     * @param json
+     * @param request
+     */
+    @PutMapping("/changePhone")
+    public Result<String> changePhone(@RequestBody JSONObject json, HttpServletRequest request){
+        //获取登录用户名
+        String username = JwtUtil.getUserNameByToken(request);
+        sysUserService.changePhone(json,username);
+        return Result.ok("修改手机号成功！");
+    }
+
+    /**
+     * 发送短信验证码接口(修改手机号)
+     *
+     * @param jsonObject
+     * @return
+     */
+    @PostMapping(value = "/sendChangePhoneSms")
+    public Result<String> sendChangePhoneSms(@RequestBody JSONObject jsonObject, HttpServletRequest request) {
+        //获取登录用户名
+        String username = JwtUtil.getUserNameByToken(request);
+        String ipAddress = IpUtils.getIpAddr(request);
+        sysUserService.sendChangePhoneSms(jsonObject, username, ipAddress);
+        return Result.ok("发送验证码成功！");
+    }
+
+    /**
+     * 发送注销用户手机号验证密码[敲敲云专用]
+     *
+     * @param jsonObject
+     * @return
+     */
+    @PostMapping(value = "/sendLogOffPhoneSms")
+    public Result<String> sendLogOffPhoneSms(@RequestBody JSONObject jsonObject, HttpServletRequest request) {
+        Result<String> result = new Result<>();
+        //获取登录用户名
+        String username = JwtUtil.getUserNameByToken(request);
+        String name = jsonObject.getString("username");
+        if (oConvertUtils.isEmpty(name) || !name.equals(username)) {
+            result.setSuccess(false);
+            result.setMessage("发送验证码失败，用户不匹配！");
+            return result;
+        }
+        String ipAddress = IpUtils.getIpAddr(request);
+        sysUserService.sendLogOffPhoneSms(jsonObject, username, ipAddress);
+        result.setSuccess(true);
+        result.setMessage("发送验证码成功！");
+        return result;
+    }
+
+    /**
+     * 没有绑定手机号 直接修改密码
+     * @param oldPassword
+     * @param password
+     * @return
+     */
+    @PutMapping("/updatePasswordNotBindPhone")
+    public Result<String> updatePasswordNotBindPhone(@RequestParam(value="oldPassword") String oldPassword,
+                                                     @RequestParam(value="password") String password,
+                                                     @RequestParam(value="username") String username){
+        sysUserService.updatePasswordNotBindPhone(oldPassword, password, username);
+        return Result.OK("修改密码成功！");
+    }
+
+    /**
+     * 根据部门岗位选择用户【部门岗位选择用户专用】
+     * @return
+     */
+    @GetMapping("/queryDepartPostUserPageList")
+    public Result<IPage<SysUser>> queryDepartPostUserPageList( @RequestParam(name="pageNo", defaultValue="1") Integer pageNo,
+                                                        @RequestParam(name="pageSize", defaultValue="10") Integer pageSize,
+                                                        @RequestParam(name = "departId", required = false) String departId,
+                                                        @RequestParam(name="realname",required=false) String realname,
+                                                        @RequestParam(name="username",required=false) String username,
+                                                        @RequestParam(name="isMultiTranslate",required=false) String isMultiTranslate,
+                                                        @RequestParam(name="id",required = false) String id){
+        String[] arr = new String[]{departId, realname, username, id};
+        SqlInjectionUtil.filterContent(arr, SymbolConstant.SINGLE_QUOTATION_MARK);
+        IPage<SysUser> pageList = sysUserDepartService.queryDepartPostUserPageList(departId, username, realname, pageSize, pageNo,id,isMultiTranslate);
+        return Result.OK(pageList);
+    }
+
+    /**
+     * 获取上传文件的进度
+     * 
+     * @param fileKey
+     * @param type
+     * @return
+     */
+    @GetMapping("/getUploadFileProgress")
+    public Result<Double> getUploadFileProgress(@RequestParam(name = "fileKey") String fileKey,
+                                                @RequestParam("type") String type){
+        Double progress = ImportSysUserCache.getImportSysUserMap(fileKey, type);
+        if(progress == 100){
+            ImportSysUserCache.removeImportLowAppMap(fileKey);
+        }
+        return Result.ok(progress);
+    }
+
+    /**
+     * 验证当前登录用户是否仍使用系统默认初始密码。
+     * 返回值说明:
+     *   yes_{URL编码后的默认密码} -> 用户当前密码为默认初始密码，前端需弹出强制修改提示
+     *   no -> 用户密码不是默认密码，或未开启默认密码检测开关
+     */
+    @GetMapping("/verifyIzDefaultPwd")
+    public Result<String> verifyIzDefaultPwd() throws UnsupportedEncodingException {
+        // 未配置 Firewall 或已关闭默认密码检测开关 (enableDefaultPwdCheck=false) 时，直接返回 "no" 表示无需提示
+        if (jeecgBaseConfig.getFirewall() == null || Boolean.FALSE.equals((jeecgBaseConfig.getFirewall().getEnableDefaultPwdCheck()))) {
+            return Result.OK("no");
+        }
+        
+        LoginUser sysUser = (LoginUser) SecurityUtils.getSubject().getPrincipal();
+        SysUser user = sysUserService.getById(sysUser.getId());
+        String passwordEncode = PasswordUtil.encrypt(user.getUsername(), PasswordConstant.DEFAULT_PASSWORD, user.getSalt());
+        if(passwordEncode.equals(user.getPassword())){
+            String encode = URLEncoder.encode(PasswordConstant.DEFAULT_PASSWORD, "UTF-8");
+            return Result.OK("yes_" + encode);
+        }
+        return Result.OK("no");
     }
 }

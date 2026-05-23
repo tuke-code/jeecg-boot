@@ -14,14 +14,12 @@ export function useData(props: JVxeTableProps): JVxeDataProps {
     scroll: reactive({ top: 0, left: 0 }),
     scrolling: ref(false),
     defaultVxeProps: reactive({
-      // update-begin--author:liaozhiyang---date:20240607---for：【TV360X-327】vxetable警告
       // rowId: props.rowKey,
       rowConfig: {
         keyField: props.rowKey,
+        // 高亮hover的行
+        isHover: true,
       },
-      // update-end--author:liaozhiyang---date:20240607---for：【TV360X-327】vxetable警告
-      // 高亮hover的行
-      highlightHoverRow: true,
 
       // --- 【issues/209】自带的tooltip会错位，所以替换成原生的title ---
       // 溢出隐藏并显示tooltip
@@ -35,14 +33,13 @@ export function useData(props: JVxeTableProps): JVxeDataProps {
       editConfig: {
         trigger: 'click',
         mode: 'cell',
-        // update-begin--author:liaozhiyang---date:20231013---for：【QQYUN-5133】JVxeTable 行编辑升级
         //activeMethod: () => !props.disabled,
         beforeEditMethod: () => !props.disabled,
-        // update-end--author:liaozhiyang---date:20231013---for：【QQYUN-5133】JVxeTable 行编辑升级
       },
       expandConfig: {
-        iconClose: 'ant-table-row-expand-icon ant-table-row-expand-icon-collapsed',
-        iconOpen: 'ant-table-row-expand-icon ant-table-row-expand-icon-expanded',
+        iconClose: 'vxe-icon-arrow-right',
+        iconOpen: 'vxe-icon-arrow-down',
+        ...props.expandConfig,
       },
       // 虚拟滚动配置，y轴大于xx条数据时启用虚拟滚动
       scrollY: {
@@ -53,9 +50,22 @@ export function useData(props: JVxeTableProps): JVxeDataProps {
         // 暂时关闭左右虚拟滚动
         enabled: false,
       },
-      radioConfig: { highlight: true },
-      checkboxConfig: { highlight: true },
-      mouseConfig: { selected: false },
+      radioConfig: {
+        // 保留勾选状态
+        reserve: true,
+        highlight: true,
+      },
+      checkboxConfig: {
+        // 保留勾选状态
+        reserve: true,
+        highlight: true,
+      },
+      // update-begin--author:liaozhiyang---date:20260316---for:【QQYUN-13751】jVxetable优化
+      // 禁止点击表格外部时清空校验状态，避免每次点击空白区域触发 reactData.validErrorMaps={} 导致不必要的重渲染
+      validConfig: {
+        autoClear: false,
+      },
+      // update-end--author:liaozhiyang---date:20260316---for:【QQYUN-13751】jVxetable优化
       keyboardConfig: {
         // 删除键功能
         isDel: false,

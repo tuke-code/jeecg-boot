@@ -101,11 +101,10 @@ export const formSchema: FormSchema[] = [
               required: !isButton(e),
             },
           ]);
-          //update-begin---author:wangshuai ---date:20220729  for：[VUEN-1834]只有一级菜单，才默认值，子菜单的时候，清空------------
+          // 代码逻辑说明: [VUEN-1834]只有一级菜单，才默认值，子菜单的时候，清空------------
           if (isMenu(e) && !formModel.id && (formModel.component=='layouts/default/index' || formModel.component=='layouts/RouteView')) {
             formModel.component = '';
           }
-          //update-end---author:wangshuai ---date:20220729  for：[VUEN-1834]只有一级菜单，才默认值，子菜单的时候，清空------------
         },
       };
     },
@@ -122,13 +121,12 @@ export const formSchema: FormSchema[] = [
     component: 'TreeSelect',
     required: true,
     componentProps: {
-      //update-begin---author:wangshuai ---date:20230829  for：replaceFields已过期，使用fieldNames代替------------
+      // 代码逻辑说明: replaceFields已过期，使用fieldNames代替------------
       fieldNames: {
         label: 'name',
         key: 'id',
         value: 'id',
       },
-      //update-end---author:wangshuai ---date:20230829  for：replaceFields已过期，使用fieldNames代替------------
       dropdownStyle: {
         maxHeight: '50vh',
       },
@@ -141,14 +139,12 @@ export const formSchema: FormSchema[] = [
     label: '访问路径',
     component: 'Input',
     required: true,
-    //update-begin-author:liusq date:2023-06-06 for: [issues/5008]子表数据权限设置不生效
+    // 代码逻辑说明: [issues/5008]子表数据权限设置不生效
     ifShow: ({ values }) => !(values.component === ComponentTypes.IFrame && values.internalOrExternal),
-    //update-begin-author:zyf date:2022-11-02 for: 聚合路由允许路径重复
+    // 代码逻辑说明: 聚合路由允许路径重复
      dynamicRules: ({ model, schema,values }) => {
        return checkPermDuplication(model, schema,  values.menuType !== 2?true:false);
     },
-    //update-end-author:zyf date:2022-11-02 for: 聚合路由允许路径重复
-    //update-end-author:liusq date:2022-06-06 for:  [issues/5008]子表数据权限设置不生效
   },
   {
     field: 'component',
@@ -255,6 +251,9 @@ export const formSchema: FormSchema[] = [
     label: '菜单图标',
     component: 'IconPicker',
     ifShow: ({ values }) => !isButton(values.menuType),
+    componentProps: {
+      allowClear: true
+    },
   },
   {
     field: 'sortNo',
@@ -399,11 +398,48 @@ export const dataRuleFormSchema: FormSchema[] = [
       getPopupContainer: (node) => document.body,
     },
   },
+  // 代码逻辑说明: 【TV360X-1864】添加系统变量
   {
     field: 'ruleValue',
+    component: 'JInputSelect',
     label: '规则值',
-    component: 'Input',
     required: true,
+    componentProps: {
+      selectPlaceholder: '可选择系统变量',
+      inputPlaceholder: '请输入',
+      getPopupContainer: () => document.body,
+      selectWidth: '200px',
+      options: [
+        {
+          label: '登录用户账号',
+          value: '#{sys_user_code}',
+        },
+        {
+          label: '登录用户名称',
+          value: '#{sys_user_name}',
+        },
+        {
+          label: '当前日期',
+          value: '#{sys_date}',
+        },
+        {
+          label: '当前时间',
+          value: '#{sys_time}',
+        },
+        {
+          label: '登录用户部门',
+          value: '#{sys_org_code}',
+        },
+        {
+          label: '用户拥有部门',
+          value: '#{sys_multi_org_code}',
+        },
+        {
+          label: '登录用户租户',
+          value: '#{tenant_id}',
+        },
+      ],
+    },
   },
   {
     field: 'status',

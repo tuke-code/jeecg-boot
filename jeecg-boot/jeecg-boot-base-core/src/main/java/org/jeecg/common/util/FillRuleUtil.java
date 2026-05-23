@@ -4,9 +4,13 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.jeecg.common.constant.SymbolConstant;
 import org.jeecg.common.handler.IFillRuleHandler;
+import org.jeecg.common.system.query.QueryGenerator;
+
 
 
 /**
@@ -42,11 +46,47 @@ public class FillRuleUtil {
                 if (params == null) {
                     params = new JSONObject();
                 }
+
+                HttpServletRequest request = SpringContextUtils.getHttpServletRequest();
+
+                // 解析 params 中的变量
+                // 优先级：queryString > 系统变量 > 默认值
+                for (String key : params.keySet()) {
+                    // 1. 判断 queryString 中是否有该参数，如果有就优先取值
+                    //noinspection ConstantValue
+                    if (request != null) {
+                        String parameter = request.getParameter(key);
+                        if (oConvertUtils.isNotEmpty(parameter)) {
+                            params.put(key, parameter);
+                            continue;
+                        }
+                    }
+
+                    String value = params.getString(key);
+                    // 2. 用于替换 系统变量的值 #{sys_user_code}
+                    if (value != null && value.contains(SymbolConstant.SYS_VAR_PREFIX)) {
+                        value = QueryGenerator.getSqlRuleValue(value);
+                        params.put(key, value);
+                    }
+                }
+
                 if (formData == null) {
                     formData = new JSONObject();
                 }
-                // 通过反射执行配置的类里的方法
-                IFillRuleHandler ruleHandler = (IFillRuleHandler) Class.forName(ruleClass).newInstance();
+                // 包路径白名单校验，防止任意类加载漏洞
+                if (!ruleClass.startsWith("org.jeecg.")) {
+                    log.error("检测到非法填值规则类加载尝试: {}", ruleClass);
+                    throw new SecurityException("不允许加载非 org.jeecg 包路径下的填值规则类: " + ruleClass);
+                }
+
+                // 通过反射执行配置的类里的方法（先加载类并校验接口，再实例化）
+                //update-begin---author:scott ---date:20260416  for：【PR#9538】Class.forName使用上下文类加载器，增强部署兼容性-----------
+                Class<?> clazz = Class.forName(ruleClass, true, Thread.currentThread().getContextClassLoader());
+                //update-end---author:scott ---date:20260416  for：【PR#9538】Class.forName使用上下文类加载器，增强部署兼容性-----------
+                if (!IFillRuleHandler.class.isAssignableFrom(clazz)) {
+                    throw new IllegalArgumentException("类 " + ruleClass + " 未实现 IFillRuleHandler 接口");
+                }
+                IFillRuleHandler ruleHandler = (IFillRuleHandler) clazz.getDeclaredConstructor().newInstance();
                 return ruleHandler.execute(params, formData);
             } catch (Exception e) {
                 e.printStackTrace();

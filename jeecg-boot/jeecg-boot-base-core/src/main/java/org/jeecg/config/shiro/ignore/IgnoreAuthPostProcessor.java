@@ -3,16 +3,17 @@ package org.jeecg.config.shiro.ignore;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.config.shiro.IgnoreAuth;
-import org.springframework.aop.framework.Advised;
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.ApplicationListener;
-import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.beans.factory.InitializingBean;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.method.HandlerMethod;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 在spring boot初始化时，根据@RestController注解获取当前spring容器中的bean
@@ -20,27 +21,29 @@ import java.util.*;
  * @date 2024/4/18 11:35
  */
 @Slf4j
+@Lazy(false)
 @Component
 @AllArgsConstructor
-public class IgnoreAuthPostProcessor implements ApplicationListener<ContextRefreshedEvent> {
+public class IgnoreAuthPostProcessor implements InitializingBean {
 
-    private ApplicationContext applicationContext;
+    private RequestMappingHandlerMapping requestMappingHandlerMapping;
+
 
     @Override
-    public void onApplicationEvent(ContextRefreshedEvent event) {
+    public void afterPropertiesSet() throws Exception {
+
         long startTime = System.currentTimeMillis();
         
         List<String> ignoreAuthUrls = new ArrayList<>();
-        if (event.getApplicationContext().getParent() == null) {
-            // 只处理根应用上下文的事件，避免在子上下文中重复处理
-            Map<String, Object> restControllers = applicationContext.getBeansWithAnnotation(RestController.class);
-            for (Object restController : restControllers.values()) {
-                // 如 online系统的controller并不是spring 默认生成
-                if (restController instanceof Advised) {
-                    ignoreAuthUrls.addAll(postProcessRestController(restController));
-                }
-            }
-        }
+        
+        // 优化：直接从HandlerMethod过滤，避免重复扫描
+        requestMappingHandlerMapping.getHandlerMethods().values().stream()
+            .filter(handlerMethod -> handlerMethod.getMethod().isAnnotationPresent(IgnoreAuth.class))
+            .forEach(handlerMethod -> {
+                Class<?> clazz = handlerMethod.getBeanType();
+                Method method = handlerMethod.getMethod();
+                ignoreAuthUrls.addAll(processIgnoreAuthMethod(clazz, method));
+            });
 
         log.info("Init Token ignoreAuthUrls Config [ 集合 ]  ：{}", ignoreAuthUrls);
         if (!CollectionUtils.isEmpty(ignoreAuthUrls)) {
@@ -50,45 +53,30 @@ public class IgnoreAuthPostProcessor implements ApplicationListener<ContextRefre
         // 计算方法的耗时
         long endTime = System.currentTimeMillis();
         long elapsedTime = endTime - startTime;
-        log.info("Init Token ignoreAuthUrls Config [ 耗时 ] ：" + elapsedTime + "毫秒");
+        log.info("Init Token ignoreAuthUrls Config [ 耗时 ] ：" + elapsedTime + "ms");
     }
 
-    private List<String> postProcessRestController(Object restController) {
-        List<String> ignoreAuthUrls = new ArrayList<>();
-        Class<?> clazz = ((Advised) restController).getTargetClass();
+    // 优化：新方法处理单个@IgnoreAuth方法，减少重复注解检查
+    private List<String> processIgnoreAuthMethod(Class<?> clazz, Method method) {
         RequestMapping base = clazz.getAnnotation(RequestMapping.class);
         String[] baseUrl = Objects.nonNull(base) ? base.value() : new String[]{};
-        Method[] methods = clazz.getDeclaredMethods();
-
-        for (Method method : methods) {
-            if (method.isAnnotationPresent(IgnoreAuth.class) && method.isAnnotationPresent(RequestMapping.class)) {
-                RequestMapping requestMapping = method.getAnnotation(RequestMapping.class);
-                String[] uri = requestMapping.value();
-                ignoreAuthUrls.addAll(rebuildUrl(baseUrl, uri));
-            } else if (method.isAnnotationPresent(IgnoreAuth.class) && method.isAnnotationPresent(GetMapping.class)) {
-                GetMapping requestMapping = method.getAnnotation(GetMapping.class);
-                String[] uri = requestMapping.value();
-                ignoreAuthUrls.addAll(rebuildUrl(baseUrl, uri));
-            } else if (method.isAnnotationPresent(IgnoreAuth.class) && method.isAnnotationPresent(PostMapping.class)) {
-                PostMapping requestMapping = method.getAnnotation(PostMapping.class);
-                String[] uri = requestMapping.value();
-                ignoreAuthUrls.addAll(rebuildUrl(baseUrl, uri));
-            } else if (method.isAnnotationPresent(IgnoreAuth.class) && method.isAnnotationPresent(PutMapping.class)) {
-                PutMapping requestMapping = method.getAnnotation(PutMapping.class);
-                String[] uri = requestMapping.value();
-                ignoreAuthUrls.addAll(rebuildUrl(baseUrl, uri));
-            } else if (method.isAnnotationPresent(IgnoreAuth.class) && method.isAnnotationPresent(DeleteMapping.class)) {
-                DeleteMapping requestMapping = method.getAnnotation(DeleteMapping.class);
-                String[] uri = requestMapping.value();
-                ignoreAuthUrls.addAll(rebuildUrl(baseUrl, uri));
-            } else if (method.isAnnotationPresent(IgnoreAuth.class) && method.isAnnotationPresent(PatchMapping.class)) {
-                PatchMapping requestMapping = method.getAnnotation(PatchMapping.class);
-                String[] uri = requestMapping.value();
-                ignoreAuthUrls.addAll(rebuildUrl(baseUrl, uri));
-            }
+        
+        String[] uri = null;
+        if (method.isAnnotationPresent(RequestMapping.class)) {
+            uri = method.getAnnotation(RequestMapping.class).value();
+        } else if (method.isAnnotationPresent(GetMapping.class)) {
+            uri = method.getAnnotation(GetMapping.class).value();
+        } else if (method.isAnnotationPresent(PostMapping.class)) {
+            uri = method.getAnnotation(PostMapping.class).value();
+        } else if (method.isAnnotationPresent(PutMapping.class)) {
+            uri = method.getAnnotation(PutMapping.class).value();
+        } else if (method.isAnnotationPresent(DeleteMapping.class)) {
+            uri = method.getAnnotation(DeleteMapping.class).value();
+        } else if (method.isAnnotationPresent(PatchMapping.class)) {
+            uri = method.getAnnotation(PatchMapping.class).value();
         }
-
-        return ignoreAuthUrls;
+        
+        return uri != null ? rebuildUrl(baseUrl, uri) : Collections.emptyList();
     }
 
     private List<String> rebuildUrl(String[] bases, String[] uris) {
@@ -96,6 +84,10 @@ public class IgnoreAuthPostProcessor implements ApplicationListener<ContextRefre
         if (bases.length > 0) {
             for (String base : bases) {
                 for (String uri : uris) {
+                    // 如果uri包含路径占位符, 则需要将其替换为*
+                    if (uri.matches(".*\\{.*}.*")) {
+                        uri = uri.replaceAll("\\{.*?}", "*");
+                    }
                     urls.add(prefix(base) + prefix(uri));
                 }
             }

@@ -2,8 +2,8 @@ node_modules
 .DS_Store
 .github
 dist
-.npmrc
 .cache
+.playwright-mcp
 
 tests/server/static
 tests/server/static/upload
@@ -34,3 +34,4 @@ os_del.cmd
 /.vscode/
 /.history/
 /svn clear.bat
+.claude

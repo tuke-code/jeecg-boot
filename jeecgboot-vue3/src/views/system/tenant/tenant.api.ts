@@ -20,6 +20,7 @@ enum Api {
   recycleBinPageList = '/sys/tenant/recycleBinPageList',
   deleteLogicDeleted = '/sys/tenant/deleteLogicDeleted',
   revertTenantLogic = '/sys/tenant/revertTenantLogic',
+  syncDefaultPack = '/sys/tenant/syncDefaultPack',
   //用户产品包关系api
   queryTenantPackUserList = '/sys/tenant/queryTenantPackUserList',
   deleteTenantPackUser = '/sys/tenant/deleteTenantPackUser',
@@ -28,8 +29,12 @@ enum Api {
   getTenantPageListByUserId = '/sys/tenant/getTenantPageListByUserId',
   
   //新增、编辑用户租户
-  saveUser = '/sys/user/add',
+  saveUser = '/sys/user/addTenantUser',
   editUser = '/sys/user/editTenantUser',
+  //根据租户id和用户获取用户的产品包列表和当前用户下的产品包id
+  listPackByTenantUserId = '/sys/tenant/listPackByTenantUserId',
+  // 获取菜单权限
+  queryPremTreeList = '/sys/role/queryTreeList',
 }
 
 /**
@@ -111,7 +116,7 @@ export const getTenantUserList = (params) => {
 export const leaveTenant = (params, handleSuccess) => {
   Modal.confirm({
     title: '请离',
-    content: '是否请离该用户',
+    content: '是否将此用户请离当前租户',
     okText: '确认',
     cancelText: '取消',
     onOk: () => {
@@ -152,6 +157,17 @@ export const editPackPermission = (params) => {
  */
 export const deleteTenantPack = (params, handleSuccess) => {
   return defHttp.delete({ url: Api.deleteTenantPack, data: params }, { joinParamsToUrl: true }).then(() => {
+    handleSuccess();
+  });
+};
+
+/**
+ * 初始化套餐包
+ * @param params
+ * @param handleSuccess
+ */
+export const syncDefaultTenantPack = (params, handleSuccess) => {
+  return defHttp.post({ url: Api.syncDefaultPack, data: params }, { joinParamsToUrl: true }).then(() => {
     handleSuccess();
   });
 };
@@ -241,3 +257,18 @@ export const saveOrUpdateTenantUser = (params, isUpdate) => {
   let url = isUpdate ? Api.editUser : Api.saveUser;
   return defHttp.post({ url: url, params },{ joinParamsToUrl: true });
 };
+/**
+ * 根据租户id和用户获取用户的产品包列表和当前用户下的产品包id
+ * 
+ * @param params
+ */
+export const listPackByTenantUserId = (params) => {
+  return defHttp.get({ url: Api.listPackByTenantUserId, params });
+}
+
+/**
+ * 获取菜单树
+ */
+export const queryPremTreeList = () =>{
+  return defHttp.get({ url: Api.queryPremTreeList });
+}

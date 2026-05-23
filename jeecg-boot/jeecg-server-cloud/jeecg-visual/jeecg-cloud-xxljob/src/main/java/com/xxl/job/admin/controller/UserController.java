@@ -16,8 +16,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 
-import javax.annotation.Resource;
-import javax.servlet.http.HttpServletRequest;
+import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +55,13 @@ public class UserController {
         // page list
         List<XxlJobUser> list = xxlJobUserDao.pageList(start, length, username, role);
         int list_count = xxlJobUserDao.pageListCount(start, length, username, role);
+
+        // filter
+        if (list!=null && list.size()>0) {
+            for (XxlJobUser item: list) {
+                item.setPassword(null);
+            }
+        }
 
         // package result
         Map<String, Object> maps = new HashMap<String, Object>();
