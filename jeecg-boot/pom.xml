@@ -2,7 +2,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.jeecgframework.boot3</groupId>
   <artifactId>jeecg-boot-parent</artifactId>
-  <version>3.9.2</version>
+  <version>3.9.3</version>
   <packaging>pom</packaging>
   <name>JEECG BOOT ${project.version}</name>
 
@@ -23,23 +23,23 @@
   	<parent>
 	    <groupId>org.springframework.boot</groupId>
 	    <artifactId>spring-boot-starter-parent</artifactId>
-	    <version>3.5.5</version>
+	    <version>4.1.0</version>
 	    <relativePath/>
 	</parent>
 
 	<properties>
-		<jeecgboot.version>3.9.2</jeecgboot.version>
+		<jeecgboot.version>3.9.3</jeecgboot.version>
 		<!-- JDK版本支持17、21、24、25 -->
 		<java.version>17</java.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
 		<!-- 微服务 -->
-		<spring-cloud.version>2025.0.0</spring-cloud.version>
-        <spring-cloud-alibaba.version>2023.0.3.3</spring-cloud-alibaba.version>
-		<alibaba.nacos.version>2.0.4</alibaba.nacos.version>
+		<spring-cloud.version>2025.1.2</spring-cloud.version>
+        <spring-cloud-alibaba.version>2025.1.0.0</spring-cloud-alibaba.version>
+		<alibaba.nacos.version>3.2.2</alibaba.nacos.version>
 
-		<xxl-job-core.version>2.4.1</xxl-job-core.version>
-        <fastjson.version>2.0.57</fastjson.version>
+		<xxl-job-core.version>3.4.2</xxl-job-core.version>
+        <fastjson.version>2.0.58</fastjson.version>
         <aviator.version>5.2.6</aviator.version>
 		<pegdown.version>1.6.0</pegdown.version>
 		<commonmark.version>0.17.0</commonmark.version>
@@ -56,8 +56,8 @@
 
 		<!-- 积木报表-->
 		<jimureport-spring-boot-starter.version>2.5.0</jimureport-spring-boot-starter.version>
-		<jimubi-spring-boot-starter.version>2.5.0</jimubi-spring-boot-starter.version>
-		<minidao.version>1.10.20</minidao.version>
+		<jimubi-spring-boot-starter.version>2.5.0.1</jimubi-spring-boot-starter.version>
+		<minidao.version>1.10.22</minidao.version>
 		<autopoi-web.version>2.0.4</autopoi-web.version>
 		
 		<!-- 持久层 -->
@@ -111,6 +111,16 @@
 			<id>jeecg-snapshots</id>
 			<name>jeecg-snapshots Repository</name>
 			<url>https://oss.sonatype.org/content/repositories/snapshots</url>
+			<releases>
+				<enabled>false</enabled>
+			</releases>
+			<snapshots>
+				<enabled>true</enabled>
+			</snapshots>
+		</repository>
+		<repository>
+			<id>github</id>
+			<url>https://maven.pkg.github.com/alibaba/spring-cloud-alibaba</url>
 			<releases>
 				<enabled>false</enabled>
 			</releases>
@@ -223,8 +233,9 @@
 			<dependency>
 				<groupId>org.jeecgframework.boot3</groupId>
 				<artifactId>jeecg-boot-starter-job</artifactId>
-				<version>3.9.2</version>
+				<version>3.9.3</version>
 			</dependency>
+	
 			<!--redis分布式锁-->
 			<dependency>
 				<groupId>org.jeecgframework.boot3</groupId>
@@ -243,6 +254,12 @@
 					</exclusion>
 				</exclusions>
 			</dependency>
+			<!--rabbitmq消息队列-->
+			<dependency>
+				<groupId>org.jeecgframework.boot3</groupId>
+				<artifactId>jeecg-boot-starter-sentinel</artifactId>
+				<version>${jeecgboot.version}</version>
+			</dependency>
 			<!--rocketmq-->
 			<dependency>
 				<groupId>org.jeecgframework.boot3</groupId>
@@ -253,12 +270,12 @@
 			<dependency>
 				<groupId>org.jeecgframework.boot3</groupId>
 				<artifactId>jeecg-boot-starter-shardingsphere</artifactId>
-				<version>3.9.2</version>
+				<version>3.9.3</version>
 			</dependency>
 			<dependency>
 				<groupId>org.jeecgframework.boot3</groupId>
 				<artifactId>jeecg-boot-starter-shardingsphere-nacos</artifactId>
-				<version>3.9.2</version>
+				<version>3.9.3</version>
 			</dependency>
 			<dependency>
 				<groupId>org.hibernate</groupId>
@@ -546,7 +563,7 @@
 			<dependency>
 				<groupId>org.jeecgframework.boot3</groupId>
 				<artifactId>jeecg-boot-starter-ai</artifactId>
-                <version>3.9.2.4</version>
+                <version>3.9.3</version>
 			</dependency>
 			<!--flyway 支持 mysql5.7+、MariaDB10.3.16-->
 			<!--mysql5.6，需要把版本号改成5.2.1-->
@@ -659,7 +676,7 @@
                 <!--Nacos服务地址-->
                 <config.server-addr>jeecg-boot-nacos:8848</config.server-addr>
 				<!--Nacos配置中心命名空间,用于支持多环境.这里必须使用ID，不能使用名称,默认为空-->
-				<config.namespace>springboot3</config.namespace>
+				<config.namespace></config.namespace>
 				<!--Nacos配置分组名称-->
 				<config.group>DEFAULT_GROUP</config.group>
 				<!--Nacos用户名-->
@@ -689,7 +706,7 @@
                 <!--Nacos服务地址-->
                 <config.server-addr>jeecg-boot-nacos:8848</config.server-addr>
 				<!--Nacos配置中心命名空间,用于支持多环境.这里必须使用ID，不能使用名称,默认为空-->
-				<config.namespace>springboot3</config.namespace>
+				<config.namespace></config.namespace>
 				<!--Nacos配置分组名称-->
 				<config.group>DEFAULT_GROUP</config.group>
 				<!--Nacos用户名-->
@@ -707,7 +724,7 @@
                 <!--Nacos服务地址-->
                 <config.server-addr>jeecg-boot-nacos:8848</config.server-addr>
                 <!--Nacos配置中心命名空间,用于支持多环境.这里必须使用ID，不能使用名称,默认为空-->
-                <config.namespace>springboot3</config.namespace>
+                <config.namespace></config.namespace>
                 <!--Nacos配置分组名称-->
                 <config.group>DEFAULT_GROUP</config.group>
                 <!--Nacos用户名-->
@@ -725,7 +742,7 @@
                 <!--Nacos服务地址-->
                 <config.server-addr>jeecg-boot-nacos:8848</config.server-addr>
 				<!--Nacos配置中心命名空间,用于支持多环境.这里必须使用ID，不能使用名称,默认为空-->
-				<config.namespace>springboot3</config.namespace>
+				<config.namespace></config.namespace>
 				<!--Nacos配置分组名称-->
 				<config.group>DEFAULT_GROUP</config.group>
 				<!--Nacos用户名-->
