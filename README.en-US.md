@@ -7,8 +7,6 @@
 JEECG BOOT AI Low Code Platform
 ===============
 
-🚀 **Low-Code enters the v2.0 era, AI Skills Natural Language Programming is now released** — generate an entire system with a single natural-language sentence, generate complete code, draw BPMN flows, design forms, create reports and dashboards with one sentence, covering all JeecgBoot low-code scenarios.
-
 Current version: 3.9.5 (2026-08-27)
 
 
@@ -35,9 +33,9 @@ Project introduction
 
 <h3 align="center">Enterprise AI Low-Code Development Platform</h3>
 
-JeecgBoot is an AI-powered low-code development platform built around **low-code development, an AI application platform, and an AI knowledge base**. With AI Skills, developers can generate an entire system or business module from a single natural-language request. AI automatically produces the frontend and backend code, database DDL, and menu permissions, ready to run and extend. Teams can also rapidly build enterprise AI applications and intelligent knowledge bases while focusing more of their effort on core business logic.
+JeecgBoot is an AI-powered low-code development platform built around **low-code development, an AI application platform, and an AI knowledge base**. With the release of AI Skills for natural-language programming, the platform enters the Low-Code v2.0 era: developers can generate an entire system or business module from a single request, while AI automatically produces the frontend and backend code, database DDL, and menu permissions, ready to run and extend. Teams can also rapidly build enterprise AI applications and intelligent knowledge bases while focusing more of their effort on core business logic.
 
-The platform provides complete AI application development capabilities, including AI chat assistants, knowledge bases, visual workflow orchestration, MCP, and plugins, with support for mainstream models such as ChatGPT, DeepSeek, and Ollama. Its AI Skills can also draw workflows, design forms, create reports and dashboards, and even generate a complete system from one sentence.
+The platform provides complete AI application development capabilities, including AI chat assistants, knowledge bases, visual workflow orchestration, MCP, and plugins, with support for mainstream models such as ChatGPT, DeepSeek, and Ollama.
 
 JeecgBoot promotes an AI low-code workflow of **“AI Generation → Online Configuration → Code Generation → Manual Merge.”** This approach helps eliminate 80% of repetitive work in Java projects while retaining source-level extensibility, combining delivery efficiency with the flexibility required for complex business systems.
 
