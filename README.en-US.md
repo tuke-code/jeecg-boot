@@ -226,7 +226,9 @@ Technical Architecture:
 
 - Persistence layer framework: MybatisPlus 3.5.16
 
-- Report tool: JimuReport 2.1.5
+- Report tool: JimuReport 2.5.1
+
+- Big screen design: JimuBI v2.5.0
 
 - Security framework: Apache Shiro 3.0.0, Jwt 4.5.0
 
@@ -241,14 +243,14 @@ Technical Architecture:
 
 #### The front end
 
-- TechnologyStack：`Vue3.0+TypeScript+Vite6+AntDesignVue4+pinia+echarts`
+- TechnologyStack：`Vue3.0+TypeScript+Vite8+AntDesignVue4+pinia+echarts`
 
 #### Front-end environment requirements
 
 *    `Node.js 、npm 、pnpm`
 *   pnpm `v9+` is now required.
-*   Node.js Version suggestion: `v20.15.0`
- ` ( Since Vite6 Node.js 18/20 + is now required )`
+*   Node.js Version suggestion: `v20.19.0`
+ ` ( Since Vite 8, the EOL Node.js 18 is no longer supported. Node.js 20.19+ or 22.12+ is required )`
  
 
 #### Support library

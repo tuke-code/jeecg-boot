@@ -226,7 +226,9 @@ JeecgBoot AIローコードプラットフォームは、あらゆるJ2EEプロ�
 
 - 永続化レイヤーフレームワーク：MybatisPlus 3.5.16
 
-- レポートツール：JimuReport 2.1.5
+- レポートツール：JimuReport 2.5.1
+
+- 大画面デザイン：JimuBI v2.5.0
 
 - セキュリティフレームワーク：Apache Shiro 3.0.0、Jwt 4.5.0
 
@@ -241,14 +243,14 @@ JeecgBoot AIローコードプラットフォームは、あらゆるJ2EEプロ�
 
 #### フロントエンド
 
-- 技術スタック：`Vue3.0+TypeScript+Vite6+AntDesignVue4+pinia+echarts`
+- 技術スタック：`Vue3.0+TypeScript+Vite8+AntDesignVue4+pinia+echarts`
 
 #### フロントエンド環境要件
 
 *    `Node.js、npm、pnpm`
 *   pnpm `v9+` が必要です。
-*   Node.js 推奨バージョン：`v20.15.0`
- ` （Vite6以降、Node.js 18/20以上が必要です）`
+*   Node.js 推奨バージョン：`v20.19.0`
+ ` （Vite 8以降、EOLのNode.js 18はサポートされません。Node.js 20.19+または22.12+が必要です）`
  
 
 #### 対応データベース
