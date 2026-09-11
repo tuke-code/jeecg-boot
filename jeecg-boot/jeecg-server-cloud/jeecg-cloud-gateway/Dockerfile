@@ -22,4 +22,5 @@ EXPOSE 9999
 
 ADD ./target/jeecg-cloud-gateway-3.9.5.jar ./
 
-CMD sleep 100 && exec java -Djava.security.egd=file:/dev/./urandom -jar jeecg-cloud-gateway-3.9.5.jar
+# 去掉sleep 100，直接启动（docker-compose下由command覆盖为轮询nacos等system注册后再启动）
+CMD exec java -Djava.security.egd=file:/dev/./urandom -jar jeecg-cloud-gateway-3.9.5.jar

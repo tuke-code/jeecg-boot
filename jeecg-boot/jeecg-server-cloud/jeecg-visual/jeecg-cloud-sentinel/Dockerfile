@@ -22,4 +22,5 @@ EXPOSE 8848
 
 ADD ./target/jeecg-cloud-sentinel-3.9.5.jar ./
 
-CMD sleep 5 && exec java -Djava.security.egd=file:/dev/./urandom -jar jeecg-cloud-sentinel-3.9.5.jar
+# 去掉sleep 5，直接启动（依赖就绪由docker-compose的healthcheck+depends_on保证）
+CMD exec java -Djava.security.egd=file:/dev/./urandom -jar jeecg-cloud-sentinel-3.9.5.jar
